@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/components/menu_item_design.dart';
+import 'package:klockerapp/screens/employee-screens/time_management.dart';
 import 'package:klockerapp/utils/custom_theme/text_theme.dart';
+import 'package:klockerapp/screens/employee-screens/employees.dart';
 
 class Menu extends StatelessWidget {
   const Menu({super.key});
@@ -20,9 +22,24 @@ class Menu extends StatelessWidget {
             style: KAppTextTheme.darkTextTheme.headlineMedium,
           ),
         ),
-        MenuItemDesign('Employee', Icons.person),
-        MenuItemDesign('Time Management', Icons.more_time),
-        MenuItemDesign('HRM', Icons.perm_contact_calendar),
+        MenuItemDesign('Employee', Icons.person, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const Employees()),
+          );
+        }),
+        MenuItemDesign('Time Management', Icons.timer, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const TimeManagement()),
+          );
+        }),
+        MenuItemDesign('HRM', Icons.perm_contact_calendar, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const Employees()),
+          );
+        }),
         SizedBox(height: 30),
         Padding(
           padding: const EdgeInsets.all(16.0),
@@ -31,9 +48,9 @@ class Menu extends StatelessWidget {
             style: KAppTextTheme.darkTextTheme.headlineMedium,
           ),
         ),
-        MenuItemDesign('Finance', Icons.monetization_on),
-        MenuItemDesign('Company', Icons.business_rounded),
-        MenuItemDesign('Report', Icons.auto_graph_rounded),
+        MenuItemDesign('Finance', Icons.monetization_on, () => {}),
+        MenuItemDesign('Company', Icons.business_rounded, () => {}),
+        MenuItemDesign('Report', Icons.auto_graph_rounded, () => {}),
         SizedBox(height: 30),
         Padding(
           padding: const EdgeInsets.all(16.0),
@@ -42,8 +59,8 @@ class Menu extends StatelessWidget {
             style: KAppTextTheme.darkTextTheme.headlineMedium,
           ),
         ),
-        MenuItemDesign('Support', Icons.add_ic_call_outlined),
-        MenuItemDesign('Help', Icons.add_comment),
+        MenuItemDesign('Support', Icons.add_ic_call_outlined, () => {}),
+        MenuItemDesign('Help', Icons.add_comment, () => {}),
       ],
     );
   }
