@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:klockerapp/screens/employee-screens/action_screens/add_employee.dart';
-import 'package:klockerapp/screens/employee-screens/action_screens/view_employee.dart';
-
-import 'action_screens/edit_employee.dart';
+import 'components/add_employee.dart';
+import 'components/view_employee.dart';
+import 'components/edit_employee.dart';
 
 class Employees extends StatelessWidget {
   const Employees({super.key});
