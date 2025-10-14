@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-// Import your new custom widget
-import 'package:klockerapp/screens/employee-screens/components/k_text_input_field.dart';
+import 'package:intl/intl.dart'; // Import the intl package for date formatting
+import 'package:klockerapp/screens/employee-screens/components/data_collector_list.dart';
 
 class AddEmployee extends StatefulWidget {
   const AddEmployee({super.key});
@@ -10,80 +10,55 @@ class AddEmployee extends StatefulWidget {
 }
 
 class _AddEmployeeState extends State<AddEmployee> {
-  // Use a GlobalKey to manage the Form state
-  final _formKey = GlobalKey<FormState>();
+  // DataCollectorList is still just a data provider.
+  final DataCollectorList dataCollectorList = DataCollectorList();
+  DateTime _selectedDate = DateTime.now();
 
-  // Create controllers to get the values from the text fields
-  final nameController = TextEditingController();
-  final emailController = TextEditingController();
-  final phoneController = TextEditingController();
-  // ... create controllers for all other fields
-
-  @override
-  void dispose() {
-    // Dispose controllers to free up resources
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    super.dispose();
+  // --- This is the function that will handle the date picking ---
+  Future<void> _selectDate() async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context, // The context is valid here!
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate != null && pickedDate != _selectedDate) {
+      setState(() {
+        // setState is valid here!
+        _selectedDate = pickedDate;
+        // Use a controller to update the TextField's text
+        dataCollectorList.dateController.text = DateFormat(
+          'yyyy-MM-dd',
+        ).format(_selectedDate);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Use a Form widget and the key to enable validation
     return Form(
-      key: _formKey,
+      key: dataCollectorList.formKey,
       child: Padding(
-        padding: const EdgeInsets.all(16.0), // Use all-around padding
+        padding: const EdgeInsets.all(16.0),
         child: SingleChildScrollView(
-          // Prevents overflow on small screens
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                "Personal Details",
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
+              ...dataCollectorList.personalTileBody,
               const SizedBox(height: 16),
-
-              // Your new modular text fields!
-              KTextInputField(
-                controller: nameController,
-                labelText: "Name",
-                hintText: "Enter Employee Name",
-                icon: Icons.person,
+              // --- Call the method and pass the date picking function ---
+              ...dataCollectorList.getCompanyTileBody(onDateTap: _selectDate),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () {
+                  if (dataCollectorList.formKey.currentState!.validate()) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Processing Data')),
+                    );
+                  }
+                },
+                child: const Text('Add Employee'),
               ),
-              KTextInputField(
-                controller: emailController,
-                labelText: "Email",
-                hintText: "Enter Employee Email",
-                icon: Icons.email,
-              ),
-              KTextInputField(
-                controller: phoneController,
-                labelText: "Phone Number",
-                hintText: "Enter Employee Phone Number",
-                icon: Icons.phone,
-              ),
-              const KTextInputField(
-                labelText: "Address",
-                hintText: "Enter Employee Address",
-                icon: Icons.location_on,
-              ),
-              const KTextInputField(
-                labelText: "Password",
-                hintText: "Enter Employee Password",
-                icon: Icons.lock,
-                isPassword: true, // This field will hide the text
-              ),
-              const KTextInputField(
-                labelText: "Confirm Password",
-                hintText: "Confirm Your Password",
-                icon: Icons.lock_outline,
-                isPassword: true,
-              ),
-              const SizedBox(height: 24),
-              // You can add more sections here...
             ],
           ),
         ),
