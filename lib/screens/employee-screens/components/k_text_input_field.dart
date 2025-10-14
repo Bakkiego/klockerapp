@@ -1,6 +1,8 @@
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 
-class KTextInputField extends StatelessWidget {
+class KTextInputField extends StatefulWidget {
   const KTextInputField({
     super.key,
     required this.labelText,
@@ -17,25 +19,31 @@ class KTextInputField extends StatelessWidget {
   final TextEditingController? controller;
 
   @override
+  State<KTextInputField> createState() => _KTextInputFieldState();
+}
+
+class _KTextInputFieldState extends State<KTextInputField> {
+  late final String _branch;
+  @override
   Widget build(BuildContext context) {
     return Padding(
       // Add some vertical space between fields
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextFormField(
-        controller: controller,
-        obscureText: isPassword, // Hides text for passwords
+        controller: widget.controller,
+        obscureText: widget.isPassword, // Hides text for passwords
         // The decoration is now centralized here
         decoration: InputDecoration(
           // The border style is inherited from your app's theme!
           // No need to define OutlineInputBorder() here anymore.
-          labelText: labelText,
-          hintText: hintText,
+          labelText: widget.labelText,
+          hintText: widget.hintText,
           // The icon color is inherited from your app's iconTheme
-          prefixIcon: Icon(icon),
+          prefixIcon: Icon(widget.icon),
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {
-            return '$labelText is required';
+            return '${widget.labelText} is required';
           }
           return null;
         },
