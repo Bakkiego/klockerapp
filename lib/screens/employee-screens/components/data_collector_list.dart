@@ -30,6 +30,18 @@ class DataCollectorList {
           hintText: "Enter Employee Name",
           icon: Icons.person,
         ),
+        KTextInputField(
+          controller: addressController,
+          labelText: "Address",
+          hintText: "Enter Employee Address",
+          icon: Icons.location_on_rounded,
+        ),
+        KTextInputField(
+          controller: phoneController,
+          labelText: "Phone Number",
+          hintText: "Enter Employee Phone Number",
+          icon: Icons.phone,
+        ),
         // ... other fields ...
         KTextInputField(
           controller: passwordController,
