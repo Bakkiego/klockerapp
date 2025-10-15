@@ -17,14 +17,13 @@ class _AddEmployeeState extends State<AddEmployee> {
   // --- This is the function that will handle the date picking ---
   Future<void> _selectDate() async {
     final DateTime? pickedDate = await showDatePicker(
-      context: context, // The context is valid here!
+      context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
     if (pickedDate != null && pickedDate != _selectedDate) {
       setState(() {
-        // setState is valid here!
         _selectedDate = pickedDate;
         // Use a controller to update the TextField's text
         dataCollectorList.dateController.text = DateFormat(
