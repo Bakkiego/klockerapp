@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/utils/custom_theme/text_theme.dart';
 
-class AttendanceSummary extends StatefulWidget {
+class AttendanceSummary extends StatelessWidget {
   const AttendanceSummary({super.key});
 
-  @override
-  State<AttendanceSummary> createState() => _AttendanceSummaryState();
-}
-
-class _AttendanceSummaryState extends State<AttendanceSummary> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -24,8 +19,10 @@ class _AttendanceSummaryState extends State<AttendanceSummary> {
         ),
         Padding(
           padding: const EdgeInsets.all(12.0),
-          child: Row(
-            spacing: 20,
+          child: Wrap(
+            spacing: 5,
+            runSpacing: 12.0,
+            alignment: WrapAlignment.spaceEvenly,
             children: [
               SummaryContainer(Icons.document_scanner_sharp, 20, "Present"),
               SummaryContainer(Icons.assignment_late, 5, 'Late'),
