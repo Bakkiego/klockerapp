@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/components/bottom_nav.dart';
-import 'package:klockerapp/components/attendance_summary.dart';
+import 'package:klockerapp/screens/employee-screens/components/time_management_components/attendance_summary.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class HomeScreen extends StatefulWidget {
