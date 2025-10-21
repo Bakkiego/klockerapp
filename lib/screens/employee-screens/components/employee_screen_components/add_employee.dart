@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Import the intl package for date formatting
-import 'package:klockerapp/screens/employee-screens/components/data_collector_list.dart';
+import 'package:klockerapp/screens/employee-screens/components/employee_screen_components/data_collector_list.dart';
 
 class AddEmployee extends StatefulWidget {
   const AddEmployee({super.key});
