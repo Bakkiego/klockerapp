@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:date_picker_timeline/date_picker_timeline.dart';
 import 'package:klockerapp/screens/employee-screens/components/time_management_components/assign_screen.dart';
 
+import 'manage_shifts_screen.dart';
+
 class ShiftDisplayClass {
   final String shiftName;
   final String time;
@@ -69,7 +71,7 @@ class _RoosterScreenState extends State<RoosterScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const AssignScreen(),
+                        builder: (context) => const ManageShiftsScreen(),
                       ),
                     );
                   },
