@@ -31,7 +31,19 @@ class _EditEmployeeState extends State<EditEmployee> {
             ),
           ],
         ),
-        EmployeeTile(() {}),
+        EmployeeTile(
+          () {},
+          "John",
+          Row(
+            mainAxisSize: MainAxisSize
+                .min, // Prevents the Row from taking all available space
+            children: const [
+              Icon(Icons.edit_outlined), // First icon (e.g., Edit)
+              SizedBox(width: 8), // Add some space between icons
+              Icon(Icons.delete_outline, color: Colors.red),
+            ],
+          ),
+        ),
       ],
     );
   }
