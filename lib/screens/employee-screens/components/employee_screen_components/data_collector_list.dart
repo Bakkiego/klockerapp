@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'k_dropdown_field.dart';
 import 'k_text_input_field.dart';
-// You can remove 'dart:ffi', it's not being used.
 
 // CHANGE: This class now accepts a function parameter in a method
 class DataCollectorList {
