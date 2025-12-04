@@ -1,0 +1,76 @@
+import 'package:flutter/material.dart';
+
+class DepositScreen extends StatelessWidget {
+  const DepositScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Deposit')),
+      body: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: SearchBar(
+                    hintText: "Account Name",
+                    trailing: [
+                      IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.search),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 20),
+          Expanded(
+            // <-- This is NECESSARY to make the list take remaining space
+            child: ListView.builder(
+              itemCount: 5, // Replace with your actual accounts.length
+              itemBuilder: (context, index) {
+                // Create the Card UI proposed in the visualization for each item
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8.0,
+                    vertical: 4.0,
+                  ),
+                  child: Card(
+                    child: ListTile(
+                      // ListTile works perfectly as the child of a Card/ListView item
+                      // Note: If you want the visual from the example, you should use
+                      // a Row with an Expanded widget inside the Card instead of a simple ListTile.
+
+                      // Simple working structure with ListTile:
+                      title: Text(
+                        "Primary Account $index",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text("Account Number ${1000 + index}"),
+                      trailing: const Text(
+                        "\$5,000.00",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {},
+        label: Text("Deposit", style: TextStyle(fontSize: 18)),
+        icon: Icon(Icons.add),
+      ),
+    );
+  }
+}
