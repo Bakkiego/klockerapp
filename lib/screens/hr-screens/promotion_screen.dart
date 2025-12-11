@@ -40,6 +40,8 @@ class PromotionScreen extends StatelessWidget {
                 onPressed: () {},
                 child: const Text("Promote", style: TextStyle(fontSize: 18)),
               ),
+              "Employee Branch",
+              "Employee Position",
             ),
             KDropDownField(
               items: ["Manager", "Head Chef", "C.O.0"],
