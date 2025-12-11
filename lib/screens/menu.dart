@@ -21,7 +21,7 @@ import 'package:klockerapp/screens/finance-screen/expense_screen.dart';
 import 'package:klockerapp/screens/finance-screen/payee_screen.dart';
 import 'package:klockerapp/screens/finance-screen/payers_screen.dart';
 import 'package:klockerapp/screens/finance-screen/transfer_balance_screen.dart';
-import 'package:klockerapp/screens/finance-screen/company_screen.dart';
+import 'package:klockerapp/screens/company-screens/company_screen.dart';
 import 'package:klockerapp/screens/finance-screen/report_screen.dart';
 import 'package:klockerapp/screens/help-screens/settings_screen.dart';
 import 'package:klockerapp/screens/help-screens/help_screen.dart';
@@ -187,15 +187,12 @@ class Menu extends StatelessWidget {
     ];
     return ListView(
       children: [
-        Title(
-          color: Colors.white,
-          child: Text('Menu', style: KAppTextTheme.darkTextTheme.titleLarge),
-        ),
+        Text('Menu', style: Theme.of(context).textTheme.titleLarge),
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Text(
             'Employee',
-            style: KAppTextTheme.darkTextTheme.headlineMedium,
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
         ),
         MenuItemDesign('Employee', Icons.person, () {
@@ -222,7 +219,7 @@ class Menu extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Text(
             'Finances',
-            style: KAppTextTheme.darkTextTheme.headlineMedium,
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
         ),
         MenuExpansionTile(financeList, "Finance", Icons.monetization_on),
@@ -242,7 +239,7 @@ class Menu extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Text(
             'Help',
-            style: KAppTextTheme.darkTextTheme.headlineMedium,
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
         ),
         MenuItemDesign(
