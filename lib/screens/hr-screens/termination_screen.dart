@@ -49,6 +49,8 @@ class TerminationScreen extends StatelessWidget {
                 onPressed: () {},
                 child: const Text("Terminate", style: TextStyle(fontSize: 18)),
               ),
+              "Employee Branch",
+              "Employee Position",
             ),
             const SizedBox(height: 20),
             const Spacer(),

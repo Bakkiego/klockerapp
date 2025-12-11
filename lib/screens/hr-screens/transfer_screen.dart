@@ -70,6 +70,8 @@ class _TransferScreenState extends State<TransferScreen> {
                   onPressed: () {},
                   child: const Text("Select", style: TextStyle(fontSize: 18)),
                 ),
+                "Employee Branch",
+                "Employee Position",
               ),
               KTextInputField(
                 labelText: "Branch Name",

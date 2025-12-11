@@ -49,6 +49,8 @@ class ResignationScreen extends StatelessWidget {
                 onPressed: () {},
                 child: const Text("Resign", style: TextStyle(fontSize: 18)),
               ),
+              "Employee Branch",
+              "Employee Position",
             ),
             const SizedBox(height: 20),
             const Spacer(),

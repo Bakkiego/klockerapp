@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'components/transfer_detail_screen.dart';
+
 class ManageTransferScreen extends StatefulWidget {
   const ManageTransferScreen({super.key});
 
@@ -62,8 +64,14 @@ class _ManageTransferScreenState extends State<ManageTransferScreen> {
                 return GestureDetector(
                   onTap: () {
                     // Placeholder for navigation to Transfer Detail Screen
-                    print(
-                      "Tapped on transfer: ${transfer['from']} to ${transfer['to']}",
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => TransferDetailScreen(
+                          // Pass the current item's data map to the detail screen
+                          transferDetails: transfer,
+                        ),
+                      ),
                     );
                   },
                   child: Padding(
@@ -141,6 +149,21 @@ class _ManageTransferScreenState extends State<ManageTransferScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           // Logic for navigating to the Add New Transfer form
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TransferDetailScreen(
+                transferDetails: {
+                  "from": "Primary Savings (1234)",
+                  "to": "Investment Portfolio (9012)",
+                  "amount": "1,500.00",
+                  "date": "Sep 15, 2025",
+                  "paymentMethod": "Bank Transfer",
+                  "ref": "TRN-98765-ABC",
+                },
+              ),
+            ),
+          );
         },
         child: const Icon(Icons.add),
       ),

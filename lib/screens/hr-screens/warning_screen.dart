@@ -37,6 +37,8 @@ class WarningScreen extends StatelessWidget {
                 onPressed: () {},
                 child: const Text("Select", style: TextStyle(fontSize: 18)),
               ),
+              "Employee Branch",
+              "Employee Position",
             ),
             TextField(
               maxLines: null, // Allows for multiple lines of input
