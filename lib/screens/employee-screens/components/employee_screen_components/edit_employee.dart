@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'employee_tile.dart';
+import 'edit_employee_details_screen.dart';
 
 class EditEmployee extends StatefulWidget {
   const EditEmployee({super.key});
@@ -37,12 +38,24 @@ class _EditEmployeeState extends State<EditEmployee> {
           Row(
             mainAxisSize: MainAxisSize
                 .min, // Prevents the Row from taking all available space
-            children: const [
-              Icon(Icons.edit_outlined), // First icon (e.g., Edit)
+            children: [
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditEmployeeDetailsScreen(),
+                    ),
+                  );
+                },
+                child: Icon(Icons.edit),
+              ), // First icon (e.g., Edit)
               SizedBox(width: 8), // Add some space between icons
               Icon(Icons.delete_outline, color: Colors.red),
             ],
           ),
+          "Employee Branch",
+          "Employee Position",
         ),
       ],
     );

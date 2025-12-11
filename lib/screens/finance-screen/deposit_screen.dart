@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'components/add_deposit_screen.dart';
+
 class DepositScreen extends StatelessWidget {
   const DepositScreen({super.key});
 
@@ -67,7 +69,15 @@ class DepositScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              // Navigates to the screen where the user inputs deposit details
+              builder: (context) => const NewDepositScreen(),
+            ),
+          );
+        },
         label: Text("Deposit", style: TextStyle(fontSize: 18)),
         icon: Icon(Icons.add),
       ),
