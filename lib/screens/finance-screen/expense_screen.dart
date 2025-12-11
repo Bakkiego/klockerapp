@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'components/expense_detail_screen.dart';
+
 // 1. Simple Data Model for an Expense (Optional, but good practice)
 class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({super.key});
@@ -69,7 +71,15 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                 return GestureDetector(
                   onTap: () {
                     // Placeholder for navigation to Expense Detail Screen
-                    print("Tapped on expense: ${expense['payee']}");
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ExpenseDetailScreen(
+                          // Pass the current item's data map to the detail screen
+                          expenseDetails: expense,
+                        ),
+                      ),
+                    );
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -136,6 +146,22 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           // Logic for navigating to the Add New Expense form
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ExpenseDetailScreen(
+                expenseDetails: {
+                  "account": "-",
+                  "payee": "Jessica",
+                  "amount": "49,700.00",
+                  "category": "Cash",
+                  "ref": "-",
+                  "payment": "Bank Transfer",
+                  "date": "Sep 3, 2025",
+                },
+              ),
+            ),
+          );
         },
         child: const Icon(Icons.add),
       ),
