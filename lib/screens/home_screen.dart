@@ -24,14 +24,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          SearchBar(
-            hintText: 'Type Feature',
-            trailing: <Widget>[
-              Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Icon(Icons.search_sharp),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: SearchBar(
+              hintText: 'Type Feature',
+              trailing: <Widget>[
+                Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Icon(Icons.search_sharp),
+                ),
+              ],
+            ),
           ),
           AttendanceSummary(),
           Divider(height: 2, color: Colors.grey, indent: 20, endIndent: 20),
