@@ -15,8 +15,17 @@ class KlockerappTheme {
     textTheme: KAppTextTheme.lightTextTheme,
     appBarTheme: KAppBarTheme.lightAppBarTheme,
     bottomNavigationBarTheme: KBottomNavTheme.lightBottomNavTheme,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.green, // Change this to your main brand color!
+    colorScheme: ColorScheme.light(
+      primary: Colors.green, // 👈 Set the primary color to your desired green
+      // The AppBar typically uses the primary color for its background,
+      // or a color derived from it.
+      // You can explicitly set the background for the Scaffold/Canvas here too
+      // background: Colors.white,
+      surface: Colors.white,
+      onPrimary: Colors.white, // Text/icon color on the primary background
+      onSurface: Colors.black, // Text/icon color on the surface/card background
+      // ... other colors
+      // Change this to your main brand color!
       brightness: Brightness.light,
     ),
     inputDecorationTheme: InputDecorationTheme(

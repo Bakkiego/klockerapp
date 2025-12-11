@@ -15,12 +15,12 @@ class KAppTextTheme {
       fontWeight: FontWeight.normal,
     ),
     headlineSmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.black,
       fontWeight: FontWeight.w300,
     ),
     bodySmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.black,
       fontWeight: FontWeight.w300,
     ),
@@ -45,7 +45,7 @@ class KAppTextTheme {
       fontWeight: FontWeight.bold,
     ),
     labelSmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.black,
       fontWeight: FontWeight.bold,
     ),
@@ -60,7 +60,7 @@ class KAppTextTheme {
       fontWeight: FontWeight.bold,
     ),
     titleSmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.black,
       fontWeight: FontWeight.bold,
     ),
@@ -77,12 +77,12 @@ class KAppTextTheme {
       fontWeight: FontWeight.normal,
     ),
     headlineSmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.white,
       fontWeight: FontWeight.w300,
     ),
     bodySmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.white,
       fontWeight: FontWeight.w300,
     ),
@@ -107,7 +107,7 @@ class KAppTextTheme {
       fontWeight: FontWeight.bold,
     ),
     labelSmall: TextStyle().copyWith(
-      fontSize: 10,
+      fontSize: 15,
       color: Colors.white,
       fontWeight: FontWeight.bold,
     ),
