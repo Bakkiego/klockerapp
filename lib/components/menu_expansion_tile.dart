@@ -9,7 +9,7 @@ class MenuExpansionTile extends StatelessWidget {
   List<Widget> get _buildTiles {
     return itemTitles.map((item) {
       return ListTile(
-        title: Text(item.title),
+        title: Text(item.title, style: const TextStyle(fontSize: 20)),
         onTap: item.onTap,
         trailing: const Icon(Icons.arrow_right),
       );
@@ -19,7 +19,7 @@ class MenuExpansionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ExpansionTile(
-      title: Text("$dropdown_menu_title"),
+      title: Text("$dropdown_menu_title", style: const TextStyle(fontSize: 25)),
       leading: Icon(icon),
       children: _buildTiles,
     );
