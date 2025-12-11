@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:klockerapp/screens/finance-screen/components/add_payee_screen.dart';
+
+import 'components/edit_payee_screen.dart';
 
 class PayeeScreen extends StatefulWidget {
   const PayeeScreen({super.key});
@@ -8,6 +11,14 @@ class PayeeScreen extends StatefulWidget {
 }
 
 class _PayeeScreenState extends State<PayeeScreen> {
+  final Map<String, String> examplePayerData = const {
+    "id":
+        "PAYER001", // A unique ID is crucial for the database UPDATE operation
+    "name": "Acme Corp Payroll Account",
+    "accountNumber": "9876543210",
+    "bankName": "First Global Bank",
+    "type": "External", // Optional: useful for categorizing payers
+  };
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,7 +70,24 @@ class _PayeeScreenState extends State<PayeeScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(onPressed: () {}, icon: Icon(Icons.edit)),
+                          IconButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const EditPayeeScreen(
+                                    initialPayerData: {
+                                      "id": "PAYER001",
+                                      "name": "Acme Corp Payroll Account",
+                                      "accountNumber": "9876543210",
+                                      "bankName": "First Global Bank",
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: Icon(Icons.edit),
+                          ),
                           IconButton(
                             onPressed: () {},
                             icon: Icon(Icons.delete),
@@ -75,7 +103,12 @@ class _PayeeScreenState extends State<PayeeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddPayeeScreen()),
+          );
+        },
         child: Icon(Icons.add),
       ),
     );

@@ -1,7 +1,19 @@
 import 'package:flutter/material.dart';
 
+import 'components/edit_branch_screen.dart';
+
 class BranchScreen extends StatelessWidget {
   const BranchScreen({super.key});
+
+  final Map<String, String> exampleBranchData = const {
+    "id":
+        "BRANCH001", // A unique ID is crucial for the database UPDATE operation
+    "name": "Branch Name",
+    "address": "123 Main Street",
+    "code": "BR001",
+    "isOperational": "true",
+    // Optional: useful for categorizing payers
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +64,21 @@ class BranchScreen extends StatelessWidget {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(onPressed: () {}, icon: Icon(Icons.edit)),
-                        IconButton(onPressed: () {}, icon: Icon(Icons.delete)),
+                        IconButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditBranchScreen(
+                                  initialBranchData: Map.from(
+                                    exampleBranchData,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          icon: Icon(Icons.edit),
+                        ),
                       ],
                     ),
                   ),

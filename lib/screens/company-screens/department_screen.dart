@@ -1,19 +1,94 @@
 import 'package:flutter/material.dart';
 
+// Import the necessary screens
+import './components/edit_department_screen.dart';
+// import 'department_detail_screen.dart'; // No longer needed if card is not tappable
+
 class DepartmentScreen extends StatelessWidget {
   const DepartmentScreen({super.key});
+
+  // Mock data structure for demonstration
+  final List<Map<String, String>> _mockDepartments = const [
+    {
+      "id": "DEPT001",
+      "name": "Human Resources (HR)",
+      "branch": "HQ Branch",
+      "code": "HR-001",
+      "manager": "Sarah Connor",
+    },
+    {
+      "id": "DEPT002",
+      "name": "Finance & Accounting",
+      "branch": "Downtown LA",
+      "code": "FA-002",
+      "manager": "John Smith",
+    },
+    {
+      "id": "DEPT003",
+      "name": "Product Development",
+      "branch": "Midtown NY",
+      "code": "PD-003",
+      "manager": "Linda Ray",
+    },
+  ];
+
+  // Helper to navigate directly to the Edit screen
+  void _navigateToEditScreen(
+    BuildContext context,
+    Map<String, String> departmentData,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        // Pass the department data to the Edit screen for pre-filling
+        builder: (context) =>
+            EditDepartmentScreen(initialDepartmentData: departmentData),
+      ),
+    );
+  }
+
+  // Helper to show a simple delete confirmation
+  void _showDeleteConfirmation(BuildContext context, String departmentName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Deletion'),
+        content: Text(
+          'Are you sure you want to delete the department: $departmentName?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // TODO: Implement actual delete logic
+              Navigator.of(context).pop(); // Close dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('$departmentName Deleted!')),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // Search Bar Section (Unchanged)
         Row(
           children: [
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: SearchBar(
-                  hintText: "Branch Name",
+                  hintText: "Department Name",
                   trailing: [
                     IconButton(
                       onPressed: () {},
@@ -25,35 +100,49 @@ class DepartmentScreen extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: 20),
+        const SizedBox(height: 20),
+
+        // Department List Section (Modified)
         Expanded(
-          // <-- This is NECESSARY to make the list take remaining space
           child: ListView.builder(
-            itemCount: 5, // Replace with your actual accounts.length
+            itemCount: _mockDepartments.length,
             itemBuilder: (context, index) {
-              // Create the Card UI proposed in the visualization for each item
+              final department = _mockDepartments[index];
+
               return Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 8.0,
                   vertical: 4.0,
                 ),
                 child: Card(
+                  elevation: 2,
+                  // 🚩 CHANGE: GestureDetector removed, Card now directly wraps ListTile
                   child: ListTile(
-                    // ListTile works perfectly as the child of a Card/ListView item
-                    // Note: If you want the visual from the example, you should use
-                    // a Row with an Expanded widget inside the Card instead of a simple ListTile.
-
-                    // Simple working structure with ListTile:
+                    // Department Name
                     title: Text(
-                      "Department $index",
+                      department['name']!,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text("Branch"),
+
+                    // Branch & Manager Subtitle
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Branch: ${department['branch']!}"),
+                        Text("Manager: ${department['manager']!}"),
+                      ],
+                    ),
+
+                    // Trailing section for Actions (Unchanged, remains functional)
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(onPressed: () {}, icon: Icon(Icons.edit)),
-                        IconButton(onPressed: () {}, icon: Icon(Icons.delete)),
+                        // EDIT BUTTON
+                        IconButton(
+                          onPressed: () =>
+                              _navigateToEditScreen(context, department),
+                          icon: const Icon(Icons.edit),
+                        ),
                       ],
                     ),
                   ),

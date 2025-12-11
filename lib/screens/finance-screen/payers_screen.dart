@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:klockerapp/screens/finance-screen/components/edit_payer_screen.dart';
+
+import 'components/add_payers_screen.dart';
 
 class PayersScreen extends StatelessWidget {
   const PayersScreen({super.key});
+  final Map<String, String> examplePayerData = const {
+    "id":
+        "PAYER001", // A unique ID is crucial for the database UPDATE operation
+    "name": "Acme Corp Payroll Account",
+    "accountNumber": "9876543210",
+    "bankName": "First Global Bank",
+    "type": "External", // Optional: useful for categorizing payers
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +65,24 @@ class PayersScreen extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(onPressed: () {}, icon: Icon(Icons.edit)),
+                          IconButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const EditPayerScreen(
+                                    initialPayerData: {
+                                      "id": "PAYER001",
+                                      "name": "Acme Corp Payroll Account",
+                                      "accountNumber": "9876543210",
+                                      "bankName": "First Global Bank",
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: Icon(Icons.edit),
+                          ),
                           IconButton(
                             onPressed: () {},
                             icon: Icon(Icons.delete),
@@ -70,7 +98,12 @@ class PayersScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddPayerScreen()),
+          );
+        },
         child: Icon(Icons.add),
       ),
     );

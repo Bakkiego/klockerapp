@@ -78,6 +78,8 @@ class _AwardsScreenState extends State<AwardsScreen> {
                 onPressed: () {},
                 child: const Text("Add", style: TextStyle(fontSize: 18)),
               ),
+              "Employee Branch",
+              "Employee Position",
             ),
           ],
         ),
