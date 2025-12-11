@@ -11,7 +11,7 @@ class MenuItemDesign extends StatelessWidget {
     return ListTile(
       onTap: () => onTap(),
       leading: Icon(itemIcon),
-      title: Text(itemTitle),
+      title: Text(itemTitle, style: TextStyle(fontSize: 25)),
       trailing: Icon(Icons.navigate_next),
     );
   }
