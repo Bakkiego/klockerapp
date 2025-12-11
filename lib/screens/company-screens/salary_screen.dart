@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'components/add_salary_screen.dart';
+import 'components/employee_salary_detail_screen.dart';
+
 class SalaryScreen extends StatefulWidget {
   const SalaryScreen({super.key});
 
@@ -63,8 +66,14 @@ class _SalaryScreenState extends State<SalaryScreen> {
 
                 return GestureDetector(
                   onTap: () {
-                    // Placeholder for navigation to Employee Detail Screen
-                    print("Tapped on employee: ${employee['name']}");
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EmployeeSalaryDetailScreen(
+                          employeeDetails: employee,
+                        ),
+                      ),
+                    );
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -144,7 +153,13 @@ class _SalaryScreenState extends State<SalaryScreen> {
       // 3. Floating Action Button (FAB) for adding new employees or running payroll
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Logic for navigating to the Add New Employee form
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  const AddSalaryRateScreen(), // <-- Added Navigation
+            ),
+          );
         },
         child: const Icon(Icons.person_add),
       ),
