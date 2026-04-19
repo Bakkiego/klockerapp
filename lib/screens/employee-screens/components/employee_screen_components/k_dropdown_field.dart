@@ -1,47 +1,47 @@
 import 'package:flutter/material.dart';
 
-class KDropDownField extends StatefulWidget {
+class KDropDownField extends StatelessWidget {
+  // Changed to StatelessWidget
   const KDropDownField({
     super.key,
     required this.items,
     required this.hintText,
     this.onChanged,
+    this.value, // ✅ Added to constructor properly
   });
 
   final List<String> items;
   final String hintText;
+  final String? value; // ✅ The current selection
   final void Function(String?)? onChanged;
-
-  @override
-  State<KDropDownField> createState() => _KDropDownFieldState();
-}
-
-class _KDropDownFieldState extends State<KDropDownField> {
-  String? _selectedValue; // Can be null initially
 
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: _selectedValue,
-      hint: Text(widget.hintText), // Show hint text when no value is selected
+      value: value, // ✅ Uses the value passed from the parent
+      isExpanded: true, // Prevents layout overflow
+      icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
+      style: const TextStyle(color: Colors.white, fontSize: 16),
+      // This styles the "Select Branch" text before a choice is made
+      hint: Text(
+        hintText,
+        style: TextStyle(color: Colors.white.withOpacity(0.7)),
+      ), // Ensures text isn't white!
       decoration: const InputDecoration(
-        // Consistent styling with your text fields
-        prefixIcon: Icon(Icons.location_city), // Example icon
+        prefixIcon: Icon(Icons.location_city, color: Color(0xFF00A36C)),
         border: OutlineInputBorder(),
+        // Force the dropdown background to be white so we can see the text
       ),
-      onChanged: (String? newValue) {
-        setState(() {
-          _selectedValue = newValue;
-        });
-        if (widget.onChanged != null) {
-          widget.onChanged!(newValue);
-        }
-      },
-      items: widget.items.map<DropdownMenuItem<String>>((String value) {
-        return DropdownMenuItem<String>(value: value, child: Text(value));
+      dropdownColor: Colors.grey,
+      onChanged: onChanged, // Passes the change straight up
+      items: items.map<DropdownMenuItem<String>>((String val) {
+        return DropdownMenuItem<String>(
+          value: val,
+          child: Text(val, style: const TextStyle(color: Colors.white)),
+        );
       }).toList(),
-      validator: (value) {
-        if (value == null || value.isEmpty) {
+      validator: (val) {
+        if (val == null || val.isEmpty) {
           return 'Please select an option';
         }
         return null;
