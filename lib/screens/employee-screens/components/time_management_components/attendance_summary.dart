@@ -8,30 +8,76 @@ class AttendanceSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Attendance Summary',
-            style: KAppTextTheme.darkTextTheme.bodyMedium,
-            textAlign: TextAlign.left,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Wrap(
-            spacing: 5,
-            runSpacing: 12.0,
-            alignment: WrapAlignment.spaceEvenly,
-            children: [
-              SummaryContainer(Icons.document_scanner_sharp, 20, "Present"),
-              SummaryContainer(Icons.assignment_late, 5, 'Late'),
-              SummaryContainer(Icons.no_accounts, 0, 'Absent'),
-            ],
-          ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Using Expanded to ensure they take up equal space
+            Expanded(
+              child: _buildSummaryCard(
+                "Present",
+                "20",
+                Colors.green,
+                Icons.check_circle_outline,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSummaryCard(
+                "Late",
+                "5",
+                Colors.orange,
+                Icons.history_toggle_off,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSummaryCard(
+                "Absent",
+                "0",
+                Colors.red,
+                Icons.do_not_disturb_on_outlined,
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildSummaryCard(
+    String title,
+    String value,
+    Color color,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            title,
+            style: TextStyle(fontSize: 12, color: color.withOpacity(0.8)),
+          ),
+        ],
+      ),
     );
   }
 }

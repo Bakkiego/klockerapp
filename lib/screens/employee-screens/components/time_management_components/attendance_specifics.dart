@@ -14,44 +14,75 @@ class EmployeeAttendance {
   );
 }
 
-class AttendanceSpecifics extends StatefulWidget {
-  const AttendanceSpecifics({super.key});
-
-  @override
-  State<AttendanceSpecifics> createState() => _AttendanceSpecificsState();
-}
-
-class _AttendanceSpecificsState extends State<AttendanceSpecifics> {
-  @override
+class AttendanceSpecifics extends StatelessWidget {
   final List<EmployeeAttendance> attendanceList = [
     EmployeeAttendance("09:00", "17:00", "John Doe", "Present"),
     EmployeeAttendance("08:30", "16:45", "Jane Smith", "Late"),
     EmployeeAttendance("09:15", "17:30", "Bob Johnson", "Absent"),
     EmployeeAttendance("08:00", "16:00", "Alice Brown", "Present"),
   ];
+
+  @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      physics: NeverScrollableScrollPhysics(),
+      physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
       itemCount: attendanceList.length,
       itemBuilder: (context, index) {
         final record = attendanceList[index];
-        return Card(
-          elevation: 2,
-          margin: EdgeInsetsGeometry.symmetric(vertical: 6.0),
+        final statusColor = _getStatusColor(record.status);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            // color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 5,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
             leading: CircleAvatar(
-              backgroundColor: _getStatusColor(attendanceList[index].status),
-              child: Icon(Icons.person, color: Colors.white),
+              backgroundColor: statusColor.withOpacity(0.15),
+              child: Text(
+                record.name[0],
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             title: Text(
               record.name,
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              'In: ${record.clockInTime}, Out: ${record.clockOutTime}',
+              "${record.clockInTime} - ${record.clockOutTime}",
+              style: TextStyle(color: Colors.grey.shade600),
             ),
-            trailing: Text('Status: ${record.status}'),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: statusColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                record.status,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ),
         );
       },

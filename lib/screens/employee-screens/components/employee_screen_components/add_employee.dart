@@ -46,7 +46,10 @@ class _AddEmployeeState extends State<AddEmployee> {
               ...dataCollectorList.personalTileBody,
               const SizedBox(height: 16),
               // --- Call the method and pass the date picking function ---
-              ...dataCollectorList.getCompanyTileBody(onDateTap: _selectDate),
+              ...dataCollectorList.getCompanyTileBody(
+                onDateTap: _selectDate,
+                onRefresh: () => setState(() {}),
+              ),
               const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () {
