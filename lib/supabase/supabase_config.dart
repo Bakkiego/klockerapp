@@ -1,0 +1,5 @@
+class SupabaseConfig {
+  static const supabaseUri = 'https://pyayfznovotvkcknkvay.supabase.co';
+  static const supabaseAnon =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5YXlmem5vdm90dmtja25rdmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NzE4NTQsImV4cCI6MjA4MzU0Nzg1NH0.ioo4dkRJQn9xKJJgP9say8uB58sNRcW7AWZogM5BX90";
+}
