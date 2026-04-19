@@ -53,13 +53,15 @@ class KlockerappTheme {
     fontFamily: 'Poppins',
     brightness: Brightness.dark,
     primaryColor: Colors.lightGreenAccent,
-    scaffoldBackgroundColor: Colors.black,
+    scaffoldBackgroundColor: Colors.black, // 👈 Your black background
     textTheme: KAppTextTheme.darkTextTheme,
     appBarTheme: KAppBarTheme.darkAppBarTheme,
     bottomNavigationBarTheme: KBottomNavTheme.darkBottomNavTheme,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.green, // Use the same brand color
-      brightness: Brightness.dark, // Crucial for dark mode colors
+    colorScheme: ColorScheme.dark(
+      primary: Colors.green,
+      surface: Colors.black,
+      onSurface: Colors.white,
+      brightness: Brightness.dark,
     ),
     inputDecorationTheme: InputDecorationTheme(
       enabledBorder: OutlineInputBorder(
