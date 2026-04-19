@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'utils/create_shift_screen.dart';
 
 class ManageShiftsScreen extends StatefulWidget {
   const ManageShiftsScreen({super.key});
@@ -12,102 +11,64 @@ class _ManageShiftsScreenState extends State<ManageShiftsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Manage Shifts')),
-      body: Column(
+      appBar: AppBar(
+        title: const Text(
+          'Manage Shifts',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        elevation: 0,
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {}, // Navigate to CreateShiftScreen
+        backgroundColor: const Color(0xFF00A36C),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          Padding(
-            padding: const EdgeInsets.all(15.0),
-            child: TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.green,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => CreateShiftScreen()),
-                );
-              },
-              child: Text("Add Shift", style: TextStyle(color: Colors.white)),
-            ),
-          ),
-          TableExample([
-            TimeOfDay(hour: 9, minute: 0),
-            TimeOfDay(hour: 17, minute: 0),
-          ], "Morning Shift"),
+          _buildManageCard("Morning Shift", "09:00 AM - 05:00 PM"),
+          _buildManageCard("Night Shift", "10:00 PM - 06:00 AM"),
         ],
       ),
     );
   }
-}
 
-class AddShiftScreen {
-  const AddShiftScreen();
-}
-
-class TableExample extends StatelessWidget {
-  TableExample(this._timeOfDay, this.nameOfShift, {super.key});
-
-  List<TimeOfDay> _timeOfDay = List<TimeOfDay>.filled(2, TimeOfDay.now());
-  final String nameOfShift;
-
-  @override
-  Widget build(BuildContext context) {
-    return Table(
-      border: TableBorder.all(
-        color: Colors.green,
-        width: 1.0,
-        borderRadius: BorderRadius.circular(5),
+  Widget _buildManageCard(String name, String range) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
       ),
-      columnWidths: const <int, TableColumnWidth>{
-        0: FlexColumnWidth(),
-        1: FlexColumnWidth(),
-        2: FlexColumnWidth(),
-      },
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: <TableRow>[
-        const TableRow(
-          children: <Widget>[
-            Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Text('Name', textAlign: TextAlign.center),
-            ),
-            Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Text('Time Range', textAlign: TextAlign.center),
-            ),
-            Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Text('Actions', textAlign: TextAlign.center),
-            ),
-          ],
-        ),
-        TableRow(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(nameOfShift, textAlign: TextAlign.center),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                "${_timeOfDay[0].format(context)} - ${_timeOfDay[1].format(context)}",
-                textAlign: TextAlign.center,
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              spacing: 30,
-              children: <Widget>[
-                Icon(Icons.edit),
-                Icon(Icons.delete, color: Colors.red),
-              ],
-            ),
-          ],
-        ),
-      ],
+              const SizedBox(height: 4),
+              Text(range, style: const TextStyle(color: Colors.grey)),
+            ],
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            onPressed: () {},
+          ),
+        ],
+      ),
     );
   }
 }
