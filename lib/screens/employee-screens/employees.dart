@@ -10,21 +10,19 @@ class Employees extends StatelessWidget {
   Widget build(BuildContext context) {
     return DefaultTabController(
       initialIndex: 0,
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Employees'),
           bottom: const TabBar(
             tabs: [
               Tab(child: Text("Employees")),
-              Tab(child: Text("Add")),
+              // Tab(child: Text("Add")),
               Tab(child: Text("Edit")),
             ],
           ),
         ),
-        body: TabBarView(
-          children: [ViewEmployee(), AddEmployee(), EditEmployee()],
-        ),
+        body: TabBarView(children: [ViewEmployee(), EditEmployee()]),
       ),
     );
   }
