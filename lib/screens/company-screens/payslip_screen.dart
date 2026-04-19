@@ -94,7 +94,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
                         onPressed: () {},
                         icon: const Icon(Icons.file_download),
                         label: const Text(
-                          'Export',
+                          'Generate',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
