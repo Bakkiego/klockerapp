@@ -1,0 +1,36 @@
+name: Deploy Klocker to Hostinger
+
+on:
+  push:
+    branches:
+      - main # Change this to 'master' if your main branch is called master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: 📦 Install Dependencies
+        run: flutter pub get
+
+      - name: 🛠️ Build Flutter Web
+        run: flutter build web --release
+
+      - name: 🚀 Deploy to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./build/web/
+          # 👇 CRITICAL: Verify this path matches your Hostinger folder structure!
+          # If your FTP account opens directly into public_html, it might just be /app/
+          server-dir: /domains/klockerapp.com/public_html/app/
