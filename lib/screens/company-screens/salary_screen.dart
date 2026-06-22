@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 
+import '../../supabase/repo/supabase_service.dart';
 import 'components/add_salary_screen.dart';
 import 'components/employee_salary_detail_screen.dart';
 
@@ -11,32 +14,39 @@ class SalaryScreen extends StatefulWidget {
 }
 
 class _SalaryScreenState extends State<SalaryScreen> {
-  final List<Map<String, String>> _mockEmployees = const [
-    {
-      "id": "#EMP0000001",
-      "name": "Jessica",
-      "payrollType": "Standard",
-      "grossSalary": "50,000.00",
-      "netSalary": "49,700.00",
-    },
-    {
-      "id": "#EMP0000002",
-      "name": "Raza",
-      "payrollType": "Hourly",
-      "grossSalary": "1,500.00",
-      "netSalary": "1,450.00",
-    },
-    {
-      "id": "#EMP0000003",
-      "name": "Milo",
-      "payrollType": "Contractor",
-      "grossSalary": "12,000.00",
-      "netSalary": "12,000.00",
-    },
-  ];
+  final SupabaseService _service = SupabaseService();
+  List<Map<String, dynamic>> _employees = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPayrollData();
+  }
+
+  Future<void> _fetchPayrollData() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await _service.getPayrollOverview();
+      setState(() {
+        _employees = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Error fetching payroll: $e");
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 THE BOUNCER: Check if they are allowed to manage salary configs
+    final userProvider = context.watch<UserProvider>();
+    final canManageSalaryConfigs = userProvider.can('manage_salary_configs');
+
+    // Grab the live currency symbol from settings!
+    final currency = userProvider.currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Manage Employee Salary')),
 
@@ -60,9 +70,13 @@ class _SalaryScreenState extends State<SalaryScreen> {
           // 2. The Scrollable List of Employee Cards
           Expanded(
             child: ListView.builder(
-              itemCount: _mockEmployees.length,
+              itemCount: _employees.length,
               itemBuilder: (context, index) {
-                final employee = _mockEmployees[index];
+                final employee = _employees[index];
+                final String rawId = employee['id']?.toString() ?? '';
+                final String displayId = rawId.length > 5
+                    ? '${rawId.substring(0, 5)}...'
+                    : rawId;
 
                 return GestureDetector(
                   onTap: () {
@@ -101,8 +115,11 @@ class _SalaryScreenState extends State<SalaryScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    employee['id']!,
-                                    style: TextStyle(color: Colors.grey[600]),
+                                    'ID: #$displayId',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   // Chip for Payroll Type
@@ -110,7 +127,7 @@ class _SalaryScreenState extends State<SalaryScreen> {
                                     label: Text(employee['payrollType']!),
                                     padding: EdgeInsets.zero,
                                     labelStyle: const TextStyle(fontSize: 12),
-                                    backgroundColor: Colors.lightGreen.shade100,
+                                    backgroundColor: Colors.green,
                                   ),
                                 ],
                               ),
@@ -129,7 +146,7 @@ class _SalaryScreenState extends State<SalaryScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  "\$${employee['netSalary']!}",
+                                  "$currency${employee['netSalary']!}",
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 20,
@@ -150,19 +167,21 @@ class _SalaryScreenState extends State<SalaryScreen> {
         ],
       ),
 
-      // 3. Floating Action Button (FAB) for adding new employees or running payroll
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  const AddSalaryRateScreen(), // <-- Added Navigation
-            ),
-          );
-        },
-        child: const Icon(Icons.person_add),
-      ),
+      // 🚀 GRANULAR SECURITY: Hide the FAB if they lack the configuration permission
+      floatingActionButton: canManageSalaryConfigs
+          ? FloatingActionButton(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddSalaryRateScreen(),
+                  ),
+                );
+                _fetchPayrollData();
+              },
+              child: const Icon(Icons.person_add),
+            )
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }

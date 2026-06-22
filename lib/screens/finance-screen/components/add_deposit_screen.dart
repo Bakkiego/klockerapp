@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../supabase/repo/supabase_service.dart';
 
 class NewDepositScreen extends StatefulWidget {
   const NewDepositScreen({super.key});
@@ -11,71 +12,86 @@ class NewDepositScreen extends StatefulWidget {
 class _NewDepositScreenState extends State<NewDepositScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  // Controllers for editable fields
   final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _dateController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
-  // State for selection fields
-  String? _selectedAccount;
+  String? _selectedAccountId;
   DateTime _selectedDate = DateTime.now();
 
-  // Mock list of accounts for deposit
-  final List<String> _availableAccounts = const [
-    'Primary Savings (1234)',
-    'Checking (5678)',
-    'Business Account (9012)',
-  ];
+  List<Map<String, dynamic>> _availableAccounts = [];
+  bool _isLoadingAccounts = true;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    // Pre-fill the date field with today's date
-    _dateController.text = DateFormat('MMM d, yyyy').format(_selectedDate);
+    _fetchAccounts();
+  }
+
+  Future<void> _fetchAccounts() async {
+    try {
+      final accounts = await SupabaseService().getAccounts();
+      if (mounted) {
+        setState(() {
+          _availableAccounts = accounts;
+          _isLoadingAccounts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingAccounts = false);
+    }
   }
 
   @override
   void dispose() {
     _amountController.dispose();
-    _dateController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
-  // --- Date Picker Function ---
   Future<void> _selectDate() async {
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(), // Deposits are usually current or past dated
+      lastDate: DateTime.now(),
     );
     if (pickedDate != null && pickedDate != _selectedDate) {
-      setState(() {
-        _selectedDate = pickedDate;
-        _dateController.text = DateFormat('MMM d, yyyy').format(_selectedDate);
-      });
+      setState(() => _selectedDate = pickedDate);
     }
   }
 
-  // Function to handle submitting the deposit
-  void _submitDeposit() {
+  Future<void> _submitDeposit() async {
     if (_formKey.currentState!.validate()) {
-      final depositData = {
-        'account': _selectedAccount,
-        'amount': _amountController.text,
-        'date': _dateController.text,
-        'notes': _notesController.text,
-      };
+      setState(() => _isSubmitting = true);
+      try {
+        final amount = double.parse(_amountController.text.replaceAll(',', ''));
+        final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
-      // TODO: Implement logic to send depositData to your backend
-      print("New Deposit Submitted: $depositData");
+        await SupabaseService().addDeposit(
+          accountId: _selectedAccountId!,
+          amount: amount,
+          date: formattedDate,
+          notes: _notesController.text,
+        );
 
-      // Provide feedback and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deposit submitted successfully!')),
-      );
-      Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Deposit Recorded!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Trigger refresh
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -83,101 +99,91 @@ class _NewDepositScreenState extends State<NewDepositScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('New Deposit')),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Deposit Details',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const Divider(),
+      body: _isLoadingAccounts
+          ? const Center(child: CircularProgressIndicator(color: Colors.green))
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16.0),
+                children: [
+                  // 1. Account Selection (Dynamic from DB!)
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Deposit To Account',
+                      prefixIcon: Icon(Icons.account_balance_wallet),
+                    ),
+                    value: _selectedAccountId,
+                    items: _availableAccounts.map((account) {
+                      return DropdownMenuItem<String>(
+                        value: account['id'],
+                        child: Text(account['name']),
+                      );
+                    }).toList(),
+                    onChanged: (val) =>
+                        setState(() => _selectedAccountId = val),
+                    validator: (val) =>
+                        val == null ? 'Select a destination account' : null,
+                  ),
+                  const SizedBox(height: 16),
 
-              // 1. Account Selection (Where the money is going)
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Deposit To Account',
-                  prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                ),
-                value: _selectedAccount,
-                items: _availableAccounts.map((String account) {
-                  return DropdownMenuItem<String>(
-                    value: account,
-                    child: Text(account),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedAccount = newValue;
-                  });
-                },
-                validator: (value) =>
-                    value == null ? 'Select a destination account' : null,
-              ),
-              const SizedBox(height: 16),
+                  // 2. Amount
+                  TextFormField(
+                    controller: _amountController,
+                    keyboardType: TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '\$ ',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
 
-              // 2. Amount
-              TextFormField(
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Amount',
-                  prefixText: '\$',
-                  prefixIcon: Icon(Icons.attach_money),
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter deposit amount' : null,
-              ),
-              const SizedBox(height: 16),
+                  // 3. Date Selection (Cleaned up UI)
+                  InkWell(
+                    onTap: _selectDate,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Date of Deposit',
+                        prefixIcon: Icon(Icons.calendar_today),
+                      ),
+                      child: Text(
+                        DateFormat('MMM dd, yyyy').format(_selectedDate),
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-              // 3. Date Picker Field
-              TextFormField(
-                controller: _dateController,
-                readOnly: true,
-                onTap: _selectDate,
-                decoration: const InputDecoration(
-                  labelText: 'Date of Deposit',
-                  prefixIcon: Icon(Icons.calendar_today),
-                ),
-                validator: (value) => value!.isEmpty ? 'Select a date' : null,
-              ),
-              const SizedBox(height: 16),
+                  // 4. Notes
+                  TextFormField(
+                    controller: _notesController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes/Reference (Optional)',
+                      prefixIcon: Icon(Icons.notes),
+                    ),
+                  ),
+                  const SizedBox(height: 48),
 
-              // 4. Notes/Description
-              TextFormField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Notes/Reference (Optional)',
-                  alignLabelWithHint: true,
-                  prefixIcon: Icon(Icons.notes),
-                ),
+                  ElevatedButton.icon(
+                    onPressed: _isSubmitting ? null : _submitDeposit,
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: Text(
+                      _isSubmitting ? 'Recording...' : 'Record Deposit',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-
-              const SizedBox(height: 48),
-
-              // Submit Button
-              ElevatedButton.icon(
-                onPressed: _submitDeposit,
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text(
-                  'Record Deposit',
-                  style: TextStyle(fontSize: 18),
-                ),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor:
-                      Colors.green, // Use green for income/deposits
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

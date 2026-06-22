@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
+import '../../../supabase/repo/supabase_service.dart';
 
 class EditTransferScreen extends StatefulWidget {
-  // Pass the current transfer data into the screen to pre-fill the form
-  final Map<String, String> initialTransferData;
+  final Map<String, dynamic> initialTransferData;
 
   const EditTransferScreen({super.key, required this.initialTransferData});
 
@@ -12,248 +14,196 @@ class EditTransferScreen extends StatefulWidget {
 }
 
 class _EditTransferScreenState extends State<EditTransferScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-
-  // Controllers and State for editable fields
-  late TextEditingController _amountController;
-  late TextEditingController _dateController;
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _refController;
-
-  // Since FROM and TO accounts are often selected from a list,
-  // we'll mock them with strings for simplicity in this UI code.
-  late String _selectedFromAccount;
-  late String _selectedToAccount;
-
   late DateTime _selectedDate;
-
-  // Mock list of available accounts for dropdown/selection
-  final List<String> _availableAccounts = const [
-    'Primary Savings (1234)',
-    'Checking (5678)',
-    'Investment Portfolio (9012)',
-  ];
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize controllers and state with the existing transfer data
-    _amountController = TextEditingController(
-      text: widget.initialTransferData['amount'],
-    );
     _refController = TextEditingController(
-      text: widget.initialTransferData['ref'],
-    );
-    _dateController = TextEditingController(
-      text: widget.initialTransferData['date'],
+      text: widget.initialTransferData['ref']?.toString() ?? '',
     );
 
-    _selectedFromAccount =
-        widget.initialTransferData['from'] ?? _availableAccounts.first;
-    _selectedToAccount =
-        widget.initialTransferData['to'] ?? _availableAccounts.first;
-
-    // Handle Date initialization
     try {
-      // Assuming date format is 'Sep 15, 2025' (MMM d, yyyy) from our mock
-      _selectedDate = DateFormat('MMM d, yyyy').parse(
-        widget.initialTransferData['date'] ??
-            DateFormat('MMM d, yyyy').format(DateTime.now()),
-      );
-    } catch (e) {
+      final dateStr = widget.initialTransferData['transfer_date']?.toString();
+      _selectedDate = dateStr != null
+          ? DateTime.parse(dateStr)
+          : DateTime.now();
+    } catch (_) {
       _selectedDate = DateTime.now();
     }
   }
 
-  @override
-  void dispose() {
-    // Dispose all controllers
-    _amountController.dispose();
-    _dateController.dispose();
-    _refController.dispose();
-    super.dispose();
-  }
-
-  // Function to handle the date picking
-  Future<void> _selectDate() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (pickedDate != null && pickedDate != _selectedDate) {
-      setState(() {
-        _selectedDate = pickedDate;
-        _dateController.text = DateFormat('MMM d, yyyy').format(_selectedDate);
-      });
-    }
-  }
-
-  // Function to handle saving the changes
-  void _saveChanges() {
+  Future<void> _saveChanges() async {
     if (_formKey.currentState!.validate()) {
-      // 1. Collect all updated data
-      final updatedData = {
-        'from': _selectedFromAccount,
-        'to': _selectedToAccount,
-        'amount': _amountController.text,
-        'date': _dateController.text,
-        'ref': _refController.text,
-        // Include other fields like paymentMethod if editable
-      };
+      setState(() => _isSubmitting = true);
+      try {
+        final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
+        await SupabaseService().updateFinancialTransfer(
+          id: widget.initialTransferData['id'],
+          date: formattedDate,
+          ref: _refController.text.trim(),
+        );
 
-      // 2. TODO: Implement logic to send updatedData to your backend/service
-      print("Saving transfer changes: $updatedData");
-
-      // 3. Provide feedback and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transfer updated successfully!')),
-      );
-      Navigator.pop(context); // Go back to the Detail screen
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Updated successfully!'),
+              backgroundColor: Colors.blue,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
+    final amountStr =
+        widget.initialTransferData['amount']?.toString() ?? '0.00';
+    final fromAccount =
+        widget.initialTransferData['from_account']?['name'] ?? 'Account';
+    final toAccount =
+        widget.initialTransferData['to_account']?['name'] ?? 'Account';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Transfer')),
+      appBar: AppBar(title: const Text('Edit Transfer Details')),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
+        child: ListView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Transfer Accounts',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          children: [
+            // Locked Ledger Data Display
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
               ),
-              const Divider(),
-
-              // FROM Account Dropdown
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Transfer From Account',
-                ),
-                value: _selectedFromAccount,
-                items: _availableAccounts.map((String account) {
-                  return DropdownMenuItem<String>(
-                    value: account,
-                    child: Text(account),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedFromAccount = newValue!;
-                  });
-                },
-                validator: (value) =>
-                    value == null ? 'Select source account' : null,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "LOCKED LEDGER DATA",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Amount"),
+                      Text(
+                        // 🚀 CHANGED: Using dynamic currency
+                        "$currency$amountStr",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("From"),
+                      Text(
+                        fromAccount,
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("To"),
+                      Text(
+                        toAccount,
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+            ),
 
-              // TO Account Dropdown
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Transfer To Account',
-                ),
-                value: _selectedToAccount,
-                items: _availableAccounts.map((String account) {
-                  return DropdownMenuItem<String>(
-                    value: account,
-                    child: Text(account),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedToAccount = newValue!;
-                  });
-                },
-                validator: (value) =>
-                    value == null ? 'Select destination account' : null,
-              ),
-
-              const SizedBox(height: 32),
-
-              const Text(
-                'Transfer Details',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const Divider(),
-
-              // Amount
-              TextFormField(
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Amount',
-                  prefixText: '\$',
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter transfer amount' : null,
-              ),
-              const SizedBox(height: 16),
-
-              // Date Picker Field
-              TextFormField(
-                controller: _dateController,
-                readOnly: true,
-                onTap: _selectDate,
+            // Editable Date
+            InkWell(
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedDate,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime.now(),
+                );
+                if (date != null) setState(() => _selectedDate = date);
+              },
+              child: InputDecorator(
                 decoration: const InputDecoration(
                   labelText: 'Date',
-                  suffixIcon: Icon(Icons.calendar_today),
+                  prefixIcon: Icon(Icons.calendar_today),
                 ),
-                validator: (value) => value!.isEmpty ? 'Select a date' : null,
-              ),
-              const SizedBox(height: 16),
-
-              // Reference #
-              TextFormField(
-                controller: _refController,
-                decoration: const InputDecoration(
-                  labelText: 'Reference # (Optional)',
+                child: Text(
+                  DateFormat('MMM dd, yyyy').format(_selectedDate),
+                  style: const TextStyle(fontSize: 16),
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
 
-              const SizedBox(height: 48),
-
-              // Save Button
-              ElevatedButton(
-                onPressed: _saveChanges,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text(
-                  'Save Transfer Changes',
-                  style: TextStyle(fontSize: 18),
-                ),
+            // Editable Ref
+            TextFormField(
+              controller: _refController,
+              decoration: const InputDecoration(
+                labelText: 'Reference #',
+                prefixIcon: Icon(Icons.numbers),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 32),
+
+            ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _saveChanges,
+              icon: const Icon(Icons.save),
+              label: Text(
+                _isSubmitting ? 'Saving...' : 'Save Changes',
+                style: const TextStyle(fontSize: 18),
+              ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
-// Example usage to navigate from the TransferDetailScreen:
-/*
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => EditTransferScreen(
-      initialTransferData: {
-        "from": "Primary Savings (1234)",
-        "to": "Investment Portfolio (9012)",
-        "amount": "1,500.00",
-        "date": "Sep 15, 2025",
-        "paymentMethod": "Bank Transfer",
-        "ref": "TRN-98765-ABC",
-      },
-    ),
-  ),
-);
-*/

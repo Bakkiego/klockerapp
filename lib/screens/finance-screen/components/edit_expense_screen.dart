@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
-// NOTE: In a real app, you would create a dedicated set of controllers
-// and potentially a service class to handle expense data.
-// For this UI, we'll use local TextControllers initialized with mock data.
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
+import '../../../supabase/repo/supabase_service.dart';
 
 class EditExpenseScreen extends StatefulWidget {
-  // Pass the current expense data into the screen to pre-fill the form
-  final Map<String, String> initialExpenseData;
+  final Map<String, dynamic> initialExpenseData;
 
   const EditExpenseScreen({super.key, required this.initialExpenseData});
 
@@ -18,65 +16,44 @@ class EditExpenseScreen extends StatefulWidget {
 class _EditExpenseScreenState extends State<EditExpenseScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  // Controllers for all editable fields
   late TextEditingController _payeeController;
-  late TextEditingController _amountController;
-  late TextEditingController _categoryController;
-  late TextEditingController _paymentController;
-  late TextEditingController _dateController;
+  late TextEditingController _paymentMethodController;
   late TextEditingController _refController;
 
-  // State for date picker
   late DateTime _selectedDate;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize controllers with the existing expense data
     _payeeController = TextEditingController(
-      text: widget.initialExpenseData['payee'],
+      text: widget.initialExpenseData['payee']?.toString() ?? '',
     );
-    _amountController = TextEditingController(
-      text: widget.initialExpenseData['amount'],
-    );
-    _categoryController = TextEditingController(
-      text: widget.initialExpenseData['category'],
-    );
-    _paymentController = TextEditingController(
-      text: widget.initialExpenseData['payment'],
+    _paymentMethodController = TextEditingController(
+      text: widget.initialExpenseData['payment_method']?.toString() ?? '',
     );
     _refController = TextEditingController(
-      text: widget.initialExpenseData['ref'],
+      text: widget.initialExpenseData['ref']?.toString() ?? '',
     );
 
-    // Handle Date initialization
-    _dateController = TextEditingController(
-      text: widget.initialExpenseData['date'],
-    );
     try {
-      _selectedDate = DateFormat('MMM d, yyyy').parse(
-        widget.initialExpenseData['date'] ??
-            DateFormat('MMM d, yyyy').format(DateTime.now()),
-      );
-    } catch (e) {
+      final dateStr = widget.initialExpenseData['expense_date']?.toString();
+      _selectedDate = dateStr != null
+          ? DateTime.parse(dateStr)
+          : DateTime.now();
+    } catch (_) {
       _selectedDate = DateTime.now();
     }
   }
 
   @override
   void dispose() {
-    // Dispose all controllers to free up memory
     _payeeController.dispose();
-    _amountController.dispose();
-    _categoryController.dispose();
-    _paymentController.dispose();
-    _dateController.dispose();
+    _paymentMethodController.dispose();
     _refController.dispose();
     super.dispose();
   }
 
-  // Function to handle the date picking
   Future<void> _selectDate() async {
     final DateTime? pickedDate = await showDatePicker(
       context: context,
@@ -85,137 +62,156 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       lastDate: DateTime(2100),
     );
     if (pickedDate != null && pickedDate != _selectedDate) {
-      setState(() {
-        _selectedDate = pickedDate;
-        _dateController.text = DateFormat('MMM d, yyyy').format(_selectedDate);
-      });
+      setState(() => _selectedDate = pickedDate);
     }
   }
 
-  // Function to handle saving the changes
-  void _saveChanges() {
+  Future<void> _saveChanges() async {
     if (_formKey.currentState!.validate()) {
-      // 1. Collect all updated data from controllers
-      final updatedData = {
-        'payee': _payeeController.text,
-        'amount': _amountController.text,
-        'category': _categoryController.text,
-        'payment': _paymentController.text,
-        'date': _dateController.text,
-        'ref': _refController.text,
-      };
+      setState(() => _isSubmitting = true);
 
-      // 2. TODO: Implement logic to send updatedData to your backend/service
-      print("Saving changes: $updatedData");
+      try {
+        final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
-      // 3. Provide feedback and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Expense updated successfully!')),
-      );
-      Navigator.pop(context); // Go back to the Detail screen
+        // You'll need to add an updateExpense method in your SupabaseService
+        // to update the 'payee', 'expense_date', 'payment_method', and 'ref' columns.
+        await SupabaseService().updateExpense(
+          id: widget.initialExpenseData['id'],
+          payee: _payeeController.text.trim(),
+          date: formattedDate,
+          paymentMethod: _paymentMethodController.text.trim(),
+          ref: _refController.text.trim(),
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Expense updated successfully!'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
+    // We display the amount as read-only text, as changing amounts on posted expenses
+    // usually requires a void/re-issue to keep bank balances perfectly synced.
+    final amountStr = widget.initialExpenseData['amount']?.toString() ?? '0.00';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Expense')),
+      appBar: AppBar(title: const Text('Edit Expense Details')),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
+        child: ListView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Payee
-              TextFormField(
-                controller: _payeeController,
-                decoration: const InputDecoration(labelText: 'Payee Name'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter payee name' : null,
+          children: [
+            // Amount Display (Read Only)
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(height: 16),
-
-              // Amount
-              TextFormField(
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Amount'),
-                validator: (value) => value!.isEmpty ? 'Enter amount' : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Posted Amount",
+                    style: TextStyle(color: Colors.black54, fontSize: 16),
+                  ),
+                  Text(
+                    // 🚀 CHANGED: Using dynamic currency
+                    "$currency$amountStr",
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+            ),
 
-              // Category (Can be converted to a Dropdown in a real app)
-              TextFormField(
-                controller: _categoryController,
-                decoration: const InputDecoration(labelText: 'Category'),
+            // Payee
+            TextFormField(
+              controller: _payeeController,
+              decoration: const InputDecoration(
+                labelText: 'Reason / Payee',
+                prefixIcon: Icon(Icons.person),
               ),
-              const SizedBox(height: 16),
+              validator: (value) => value!.isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 16),
 
-              // Payment Method
-              TextFormField(
-                controller: _paymentController,
-                decoration: const InputDecoration(labelText: 'Payment Method'),
-              ),
-              const SizedBox(height: 16),
-
-              // Date Picker Field
-              TextFormField(
-                controller: _dateController,
-                readOnly: true,
-                onTap: _selectDate,
+            // Date
+            InkWell(
+              onTap: _selectDate,
+              child: InputDecorator(
                 decoration: const InputDecoration(
-                  labelText: 'Date',
-                  suffixIcon: Icon(Icons.calendar_today),
+                  labelText: 'Date of Expense',
+                  prefixIcon: Icon(Icons.calendar_today),
                 ),
-                validator: (value) => value!.isEmpty ? 'Select a date' : null,
-              ),
-              const SizedBox(height: 16),
-
-              // Reference #
-              TextFormField(
-                controller: _refController,
-                decoration: const InputDecoration(
-                  labelText: 'Reference # (Optional)',
+                child: Text(
+                  DateFormat('MMM dd, yyyy').format(_selectedDate),
+                  style: const TextStyle(fontSize: 16),
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
 
-              const SizedBox(height: 32),
-
-              // Save Button
-              ElevatedButton(
-                onPressed: _saveChanges,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'Save Changes',
-                  style: TextStyle(fontSize: 18),
-                ),
+            // Payment Method
+            TextFormField(
+              controller: _paymentMethodController,
+              decoration: const InputDecoration(
+                labelText: 'Payment Method',
+                prefixIcon: Icon(Icons.credit_card),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+
+            // Reference #
+            TextFormField(
+              controller: _refController,
+              decoration: const InputDecoration(
+                labelText: 'Reference #',
+                prefixIcon: Icon(Icons.numbers),
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Save Button
+            ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _saveChanges,
+              icon: const Icon(Icons.save),
+              label: Text(
+                _isSubmitting ? 'Saving...' : 'Save Changes',
+                style: const TextStyle(fontSize: 18),
+              ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
-// Example usage to navigate from the ExpenseDetailScreen:
-/*
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => EditExpenseScreen(
-      initialExpenseData: {
-        "payee": "Jessica",
-        "amount": "49700.00",
-        "category": "Cash",
-        "payment": "Bank Transfer",
-        "date": "Sep 3, 2025",
-        "ref": "-",
-      },
-    ),
-  ),
-);
-*/

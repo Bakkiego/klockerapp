@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../supabase/repo/supabase_service.dart';
 
 class EditPayeeScreen extends StatefulWidget {
-  // Pass the current payer data into the screen to pre-fill the form
-  final Map<String, String> initialPayerData;
+  final Map<String, dynamic> initialPayerData;
 
   const EditPayeeScreen({super.key, required this.initialPayerData});
 
@@ -11,75 +11,90 @@ class EditPayeeScreen extends StatefulWidget {
 }
 
 class _EditPayeeScreenState extends State<EditPayeeScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-
-  // Controllers for Payer details
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController _accountNumberController;
   late TextEditingController _bankNameController;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    // Initialize controllers with the existing payer data
     _nameController = TextEditingController(
-      text: widget.initialPayerData['name'],
-    );
-    _accountNumberController = TextEditingController(
-      text: widget.initialPayerData['accountNumber'],
+      text: widget.initialPayerData['name']?.toString() ?? '',
     );
     _bankNameController = TextEditingController(
-      text: widget.initialPayerData['bankName'],
+      text: widget.initialPayerData['bank_name']?.toString() ?? '',
     );
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _accountNumberController.dispose();
-    _bankNameController.dispose();
-    super.dispose();
-  }
-
-  void _saveChanges() {
+  Future<void> _saveChanges() async {
     if (_formKey.currentState!.validate()) {
-      final updatedPayerData = {
-        'name': _nameController.text,
-        'accountNumber': _accountNumberController.text,
-        'bankName': _bankNameController.text,
-        // Include any required ID for the update operation
-      };
-
-      // TODO: Implement logic to UPDATE the payer data in your backend
-      print("Payer changes saved: $updatedPayerData");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payee updated successfully!')),
-      );
-      Navigator.pop(context); // Go back to the main list
+      setState(() => _isSubmitting = true);
+      try {
+        await SupabaseService().updatePayee(
+          id: widget.initialPayerData['id'],
+          name: _nameController.text.trim(),
+          bankName: _bankNameController.text.trim(),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payee updated!'),
+              backgroundColor: Color(0xFF00A36C),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
   void _showDeleteConfirmation() {
-    // Standard delete confirmation dialog
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Confirm Deletion'),
         content: const Text('Are you sure you want to delete this Payee?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // TODO: Implement actual delete logic
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to the list screen
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Payer Deleted!')));
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              setState(() => _isSubmitting = true);
+              try {
+                await SupabaseService().deletePayee(
+                  widget.initialPayerData['id'],
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Payee Deleted!'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  Navigator.pop(context, true);
+                }
+              } catch (e) {
+                if (mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+              } finally {
+                if (mounted) setState(() => _isSubmitting = false);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -92,76 +107,57 @@ class _EditPayeeScreenState extends State<EditPayeeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Edit Payee: ${widget.initialPayerData['name']}'),
-      ),
+      appBar: AppBar(title: const Text('Edit Payee')),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
+        child: ListView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Payer Name
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Payer Name'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter payee name' : null,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Payee Name',
+                prefixIcon: Icon(Icons.person),
               ),
-              const SizedBox(height: 16),
-
-              // Account Number
-              TextFormField(
-                controller: _accountNumberController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Account Number'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter account number' : null,
+              validator: (v) => v!.isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _bankNameController,
+              decoration: const InputDecoration(
+                labelText: 'Bank Name / Source',
+                prefixIcon: Icon(Icons.account_balance),
               ),
-              const SizedBox(height: 16),
-
-              // Bank Name/Source
-              TextFormField(
-                controller: _bankNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Bank Name/Source',
-                ),
+              validator: (v) => v!.isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 48),
+            ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _saveChanges,
+              icon: const Icon(Icons.save),
+              label: Text(
+                _isSubmitting ? 'Saving...' : 'Save Changes',
+                style: const TextStyle(fontSize: 18),
               ),
-
-              const SizedBox(height: 48),
-
-              // Save Button
-              ElevatedButton.icon(
-                onPressed: _saveChanges,
-                icon: const Icon(Icons.save),
-                label: const Text(
-                  'Save Changes',
-                  style: TextStyle(fontSize: 18),
-                ),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: const Color(0xFF00A36C),
+                foregroundColor: Colors.white,
               ),
-
-              const SizedBox(height: 16),
-
-              // Delete Button
-              OutlinedButton.icon(
-                onPressed: _showDeleteConfirmation,
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                label: const Text(
-                  'Delete Payee',
-                  style: TextStyle(color: Colors.red),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.red),
-                ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _isSubmitting ? null : _showDeleteConfirmation,
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: const Text(
+                'Delete Payee',
+                style: TextStyle(color: Colors.red),
               ),
-            ],
-          ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                side: const BorderSide(color: Colors.red),
+              ),
+            ),
+          ],
         ),
       ),
     );

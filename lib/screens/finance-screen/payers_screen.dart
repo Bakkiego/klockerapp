@@ -1,18 +1,39 @@
 import 'package:flutter/material.dart';
-import 'package:klockerapp/screens/finance-screen/components/edit_payer_screen.dart';
+import '../../../supabase/repo/supabase_service.dart';
+import 'components/add_payers_screen.dart'; // Ensure path is correct
+import 'components/edit_payer_screen.dart'; // Ensure path is correct
 
-import 'components/add_payers_screen.dart';
-
-class PayersScreen extends StatelessWidget {
+class PayersScreen extends StatefulWidget {
   const PayersScreen({super.key});
-  final Map<String, String> examplePayerData = const {
-    "id":
-        "PAYER001", // A unique ID is crucial for the database UPDATE operation
-    "name": "Acme Corp Payroll Account",
-    "accountNumber": "9876543210",
-    "bankName": "First Global Bank",
-    "type": "External", // Optional: useful for categorizing payers
-  };
+
+  @override
+  State<PayersScreen> createState() => _PayersScreenState();
+}
+
+class _PayersScreenState extends State<PayersScreen> {
+  List<Map<String, dynamic>> _payers = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPayers();
+  }
+
+  Future<void> _fetchPayers() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await SupabaseService().getPayers();
+      if (mounted) {
+        setState(() {
+          _payers = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,91 +41,111 @@ class PayersScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Payers')),
       body: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: SearchBar(
-                    hintText: "Payer Name",
-                    trailing: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.search),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SearchBar(
+              elevation: WidgetStateProperty.all(0),
+              backgroundColor: WidgetStateProperty.all(Colors.transparent),
+              hintText: "Search Payers",
+              trailing: [const Icon(Icons.search, color: Colors.grey)],
+            ),
           ),
-          SizedBox(height: 20),
           Expanded(
-            // <-- This is NECESSARY to make the list take remaining space
-            child: ListView.builder(
-              itemCount: 5, // Replace with your actual accounts.length
-              itemBuilder: (context, index) {
-                // Create the Card UI proposed in the visualization for each item
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0,
-                    vertical: 4.0,
-                  ),
-                  child: Card(
-                    child: ListTile(
-                      // ListTile works perfectly as the child of a Card/ListView item
-                      // Note: If you want the visual from the example, you should use
-                      // a Row with an Expanded widget inside the Card instead of a simple ListTile.
-
-                      // Simple working structure with ListTile:
-                      title: Text(
-                        "Payer Name $index",
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text("Payees Name ${1000 + index}"),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              Navigator.push(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.green),
+                  )
+                : _payers.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    itemCount: _payers.length,
+                    itemBuilder: (context, index) {
+                      final payer = _payers[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 6.0,
+                        ),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(16),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.blue.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.business,
+                              color: Colors.green,
+                            ),
+                          ),
+                          title: Text(
+                            payer['name'] ?? 'Unknown',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            "${payer['bank_name'] ?? 'External Source'}",
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () async {
+                              final result = await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const EditPayerScreen(
-                                    initialPayerData: {
-                                      "id": "PAYER001",
-                                      "name": "Acme Corp Payroll Account",
-                                      "accountNumber": "9876543210",
-                                      "bankName": "First Global Bank",
-                                    },
-                                  ),
+                                  builder: (context) =>
+                                      EditPayerScreen(initialPayerData: payer),
                                 ),
                               );
+                              if (result == true) _fetchPayers();
                             },
-                            icon: Icon(Icons.edit),
                           ),
-                          IconButton(
-                            onPressed: () {},
-                            icon: Icon(Icons.delete),
-                          ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+        onPressed: () async {
+          final result = await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const AddPayerScreen()),
           );
+          if (result == true) _fetchPayers();
         },
-        child: Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text("Add Payer"),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.business_outlined, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          const Text(
+            "No Payers Found",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const Text(
+            "Add clients or entities that send you money.",
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
       ),
     );
   }

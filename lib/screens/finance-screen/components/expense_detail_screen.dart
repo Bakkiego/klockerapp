@@ -1,61 +1,83 @@
 import 'package:flutter/material.dart';
-
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
+import '../../../supabase/repo/supabase_service.dart';
 import 'edit_expense_screen.dart';
 
 class ExpenseDetailScreen extends StatelessWidget {
-  // Mock data representing a single selected expense
-  final Map<String, String> expenseDetails;
+  final Map<String, dynamic> expenseDetails; // 🚀 Updated to dynamic
 
-  const ExpenseDetailScreen({
-    super.key,
-    // Require the details to be passed when navigating to this screen
-    required this.expenseDetails,
-  });
+  const ExpenseDetailScreen({super.key, required this.expenseDetails});
 
   @override
   Widget build(BuildContext context) {
-    // Extract required data, using safe defaults
-    final payee = expenseDetails['payee'] ?? 'N/A';
-    final amount = expenseDetails['amount'] ?? '0.00';
-    final date = expenseDetails['date'] ?? 'N/A';
-    final account = expenseDetails['account'] ?? 'N/A'; // Payer Account
-    final category = expenseDetails['category'] ?? 'N/A';
-    final ref = expenseDetails['ref'] ?? 'N/A';
-    final payment = expenseDetails['payment'] ?? 'N/A'; // Payment Method
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
+    final payee = expenseDetails['payee']?.toString() ?? 'N/A';
+    final amount = expenseDetails['amount']?.toString() ?? '0.00';
+    final account =
+        expenseDetails['accounts']?['name']?.toString() ?? 'Unknown Account';
+    final ref = expenseDetails['ref']?.toString() ?? '-';
+    final payment = expenseDetails['payment_method']?.toString() ?? 'Other';
+
+    String dateStr = expenseDetails['expense_date']?.toString() ?? 'N/A';
+    try {
+      if (dateStr != 'N/A') {
+        dateStr = DateFormat('MMM dd, yyyy').format(DateTime.parse(dateStr));
+      }
+    } catch (_) {}
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(payee), // Use Payee name as title
+        title: Text(payee),
         actions: [
-          // Action button for editing the expense
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {
-              // TODO: Navigate to the Edit Expense screen
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => EditExpenseScreen(
-                    initialExpenseData: {
-                      "payee": "Jessica",
-                      "amount": "49700.00",
-                      "category": "Cash",
-                      "payment": "Bank Transfer",
-                      "date": "Sep 3, 2025",
-                      "ref": "-",
-                    },
-                  ),
+                  builder: (context) =>
+                      EditExpenseScreen(initialExpenseData: expenseDetails),
                 ),
               );
-              print('Edit expense tapped');
             },
           ),
-          // Action button for deleting the expense
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () {
-              // TODO: Show delete confirmation dialog
-              print('Delete expense tapped');
+            onPressed: () async {
+              // Quick inline delete confirmation
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: const Text("Delete Expense"),
+                  content: const Text("Are you sure? This cannot be undone."),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(c, false),
+                      child: const Text("Cancel"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(c, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      child: const Text(
+                        "Delete",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                await SupabaseService().deleteExpense(expenseDetails['id']);
+                if (context.mounted)
+                  Navigator.pop(context, true); // Pop back and refresh list
+              }
             },
           ),
         ],
@@ -65,7 +87,7 @@ class ExpenseDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- 1. Prominent Amount/Summary Block ---
+            // --- 1. Prominent Amount Block ---
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -81,7 +103,8 @@ class ExpenseDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '\$$amount',
+                    // 🚀 CHANGED: Using dynamic currency instead of hardcoded $
+                    '$currency$amount',
                     style: TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
@@ -90,79 +113,60 @@ class ExpenseDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Paid on $date',
+                    'Paid on $dateStr',
                     style: const TextStyle(fontSize: 14, color: Colors.black54),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 24),
 
-            // --- 2. Payee and Transaction Details Section ---
+            // --- 2. Details Section ---
             const Text(
               'Transaction Details',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Divider(),
-
             _buildDetailRow(
-              context,
               icon: Icons.person_outline,
-              label: 'Payee',
+              label: 'Reason/Payee',
               value: payee,
             ),
             _buildDetailRow(
-              context,
-              icon: Icons.category_outlined,
-              label: 'Category',
-              value: category,
-            ),
-            _buildDetailRow(
-              context,
               icon: Icons.calendar_today_outlined,
               label: 'Date',
-              value: date,
+              value: dateStr,
             ),
-
             const SizedBox(height: 24),
 
-            // --- 3. Payment Information Section ---
+            // --- 3. Payment Section ---
             const Text(
               'Payment Information',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Divider(),
-
             _buildDetailRow(
-              context,
               icon: Icons.account_balance_wallet_outlined,
               label: 'Payer Account',
               value: account,
             ),
             _buildDetailRow(
-              context,
               icon: Icons.credit_card_outlined,
               label: 'Payment Method',
               value: payment,
             ),
             _buildDetailRow(
-              context,
               icon: Icons.numbers,
               label: 'Reference #',
               value: ref,
             ),
-
-            const SizedBox(height: 32),
           ],
         ),
       ),
     );
   }
 
-  // Reusable widget to display a single detail row
-  Widget _buildDetailRow(
-    BuildContext context, {
+  Widget _buildDetailRow({
     required IconData icon,
     required String label,
     required String value,
@@ -194,23 +198,3 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 }
-
-// Example usage when navigating from the Expense List screen:
-/*
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => ExpenseDetailScreen(
-      expenseDetails: {
-        "account": "-",
-        "payee": "Jessica",
-        "amount": "49,700.00",
-        "category": "Cash",
-        "ref": "-",
-        "payment": "Bank Transfer",
-        "date": "Sep 3, 2025"
-      },
-    ),
-  ),
-);
-*/

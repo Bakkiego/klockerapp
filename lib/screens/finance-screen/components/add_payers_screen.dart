@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../supabase/repo/supabase_service.dart';
 
 class AddPayerScreen extends StatefulWidget {
   const AddPayerScreen({super.key});
@@ -8,37 +9,36 @@ class AddPayerScreen extends StatefulWidget {
 }
 
 class _AddPayerScreenState extends State<AddPayerScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _bankNameController = TextEditingController();
+  bool _isSubmitting = false;
 
-  // Controllers for Payer details
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _accountNumberController =
-      TextEditingController();
-  final TextEditingController _bankNameController = TextEditingController();
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _accountNumberController.dispose();
-    _bankNameController.dispose();
-    super.dispose();
-  }
-
-  void _submitNewPayer() {
+  Future<void> _submitNewPayer() async {
     if (_formKey.currentState!.validate()) {
-      final newPayerData = {
-        'name': _nameController.text,
-        'accountNumber': _accountNumberController.text,
-        'bankName': _bankNameController.text,
-      };
-
-      // TODO: Implement logic to save newPayerData to your backend
-      print("New Payer Submitted: $newPayerData");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payer added successfully!')),
-      );
-      Navigator.pop(context); // Go back to the main list
+      setState(() => _isSubmitting = true);
+      try {
+        await SupabaseService().addPayer(
+          name: _nameController.text.trim(),
+          bankName: _bankNameController.text.trim(),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payer added successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Trigger refresh
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -48,55 +48,41 @@ class _AddPayerScreenState extends State<AddPayerScreen> {
       appBar: AppBar(title: const Text('Add New Payer')),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
+        child: ListView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Payer Name
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Payer Name (e.g., Company Account)',
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter payer name' : null,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Payer Name (e.g., Client/Company)',
+                prefixIcon: Icon(Icons.business),
               ),
-              const SizedBox(height: 16),
-
-              // Account Number
-              TextFormField(
-                controller: _accountNumberController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Account Number'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter account number' : null,
+              validator: (v) => v!.isEmpty ? 'Enter payer name' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _bankNameController,
+              decoration: const InputDecoration(
+                labelText: 'Bank Name / Source',
+                prefixIcon: Icon(Icons.account_balance),
               ),
-              const SizedBox(height: 16),
-
-              // Bank Name/Source
-              TextFormField(
-                controller: _bankNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Bank Name/Source',
-                ),
+              validator: (v) => v!.isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 48),
+            ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _submitNewPayer,
+              icon: const Icon(Icons.save),
+              label: Text(
+                _isSubmitting ? 'Saving...' : 'Add Payer',
+                style: const TextStyle(fontSize: 18),
               ),
-
-              const SizedBox(height: 48),
-
-              // Submit Button
-              ElevatedButton.icon(
-                onPressed: _submitNewPayer,
-                icon: const Icon(Icons.save),
-                label: const Text('Add Payer', style: TextStyle(fontSize: 18)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

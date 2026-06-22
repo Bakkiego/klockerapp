@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
 
 // Assuming you have an EditSalaryRateScreen similar to the Add screen logic
 import 'edit_salaryrate_screen.dart';
 
 class EmployeeSalaryDetailScreen extends StatelessWidget {
   // Receives the employee's data map from the SalaryScreen list
-  final Map<String, String> employeeDetails;
+  final Map<String, dynamic> employeeDetails;
 
   const EmployeeSalaryDetailScreen({super.key, required this.employeeDetails});
 
@@ -30,6 +32,9 @@ class EmployeeSalaryDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final salaryColor = _getSalaryColor();
     final primaryColor = Theme.of(context).colorScheme.primary;
+
+    // 🚀 Grabbing the live currency from the provider!
+    final currency = context.watch<UserProvider>().currencySymbol;
 
     return Scaffold(
       appBar: AppBar(
@@ -67,7 +72,8 @@ class EmployeeSalaryDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '\$${employeeDetails['netSalary'] ?? '0.00'}',
+                      // 🚀 CHANGED: Using dynamic currency
+                      '$currency${employeeDetails['netSalary'] ?? '0.00'}',
                       style: TextStyle(
                         fontSize: 48,
                         fontWeight: FontWeight.w900,
@@ -125,15 +131,14 @@ class EmployeeSalaryDetailScreen extends StatelessWidget {
             _buildDetailRow(
               icon: Icons.money_off,
               label: 'Gross Salary (Before Deductions)',
-              value: '\$${employeeDetails['grossSalary'] ?? '0.00'}',
+              // 🚀 CHANGED: Using dynamic currency
+              value: '$currency${employeeDetails['grossSalary'] ?? '0.00'}',
             ),
 
             _buildDetailRow(
               icon: Icons.date_range,
               label: 'Last Updated Date',
-              value:
-                  employeeDetails['lastUpdated'] ??
-                  'N/A', // Assuming you'll add this field
+              value: employeeDetails['lastUpdated'] ?? 'N/A',
             ),
           ],
         ),

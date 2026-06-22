@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
 
 class EditAccountScreen extends StatefulWidget {
   // Receives the current account data to pre-fill the form
-  final Map<String, String> initialAccountData;
+  final Map<String, dynamic> initialAccountData;
 
   const EditAccountScreen({super.key, required this.initialAccountData});
 
@@ -36,26 +38,26 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
   void initState() {
     super.initState();
 
-    // Initialize controllers with existing data
+    // 🚀 NEW: Add .toString() to safely convert dynamic database types to TextFields
     _nameController = TextEditingController(
-      text: widget.initialAccountData['name'],
+      text: widget.initialAccountData['name']?.toString() ?? '',
     );
     _initialBalanceController = TextEditingController(
-      text: widget.initialAccountData['balance'],
+      text: widget.initialAccountData['balance']?.toString() ?? '0.00',
     );
     _branchController = TextEditingController(
-      text: widget.initialAccountData['branch'],
+      text: widget.initialAccountData['branch']?.toString() ?? '',
     );
     _codeController = TextEditingController(
-      text: widget.initialAccountData['code'],
+      text: widget.initialAccountData['code']?.toString() ?? '',
     );
 
     // Initialize selected type
     _selectedAccountType =
-        widget.initialAccountData['type'] ?? _accountTypes.first;
+        widget.initialAccountData['account_type']?.toString() ??
+        _accountTypes.first; // Note: Database column is 'account_type'
     if (!_accountTypes.contains(_selectedAccountType)) {
-      _selectedAccountType =
-          _accountTypes.first; // Default if type is not in list
+      _selectedAccountType = _accountTypes.first;
     }
   }
 
@@ -92,6 +94,9 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: Text('Edit ${widget.initialAccountData['name']}')),
       body: Form(
@@ -140,10 +145,10 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
               TextFormField(
                 controller: _initialBalanceController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Current Balance',
-                  prefixText: '\$',
-                  prefixIcon: Icon(Icons.attach_money),
+                  prefixText: currency, // 🚀 CHANGED: Using dynamic currency
+                  prefixIcon: const Icon(Icons.attach_money),
                 ),
                 validator: (value) => value!.isEmpty ? 'Enter balance' : null,
               ),
@@ -175,7 +180,7 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
                 ),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.indigo,
+                  backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                 ),
               ),

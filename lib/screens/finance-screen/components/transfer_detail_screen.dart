@@ -1,59 +1,47 @@
 import 'package:flutter/material.dart';
-
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
 import 'edit_transfer_screen.dart';
 
 class TransferDetailScreen extends StatelessWidget {
-  // Mock data representing a single selected transfer
-  final Map<String, String> transferDetails;
+  final Map<String, dynamic> transferDetails;
 
-  const TransferDetailScreen({
-    super.key,
-    // Require the details to be passed when navigating to this screen
-    required this.transferDetails,
-  });
+  const TransferDetailScreen({super.key, required this.transferDetails});
 
   @override
   Widget build(BuildContext context) {
-    final amount = transferDetails['amount'] ?? '0.00';
-    final date = transferDetails['date'] ?? 'N/A';
-    final fromAccount = transferDetails['from'] ?? 'N/A';
-    final toAccount = transferDetails['to'] ?? 'N/A';
-    final paymentMethod = transferDetails['paymentMethod'] ?? 'N/A';
-    final ref = transferDetails['ref'] ?? 'N/A';
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
+    final amount = transferDetails['amount']?.toString() ?? '0.00';
+    final fromAccount =
+        transferDetails['from_account']?['name'] ?? 'Unknown Account';
+    final toAccount =
+        transferDetails['to_account']?['name'] ?? 'Unknown Account';
+    final ref = transferDetails['ref']?.toString() ?? '-';
+
+    String date = transferDetails['transfer_date']?.toString() ?? 'N/A';
+    try {
+      if (date != 'N/A') {
+        date = DateFormat('MMM dd, yyyy').format(DateTime.parse(date));
+      }
+    } catch (_) {}
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transfer Details'),
         actions: [
-          // Action button for editing the transfer (if allowed)
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {
-              // TODO: Navigate to an Edit Transfer screen
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => EditTransferScreen(
-                    initialTransferData: {
-                      "from": "Primary Savings (1234)",
-                      "to": "Investment Portfolio (9012)",
-                      "amount": "1,500.00",
-                      "date": "Sep 15, 2025",
-                      "paymentMethod": "Bank Transfer",
-                      "ref": "TRN-98765-ABC",
-                    },
-                  ),
+                  builder: (context) =>
+                      EditTransferScreen(initialTransferData: transferDetails),
                 ),
               );
-              print('Edit transfer tapped');
-            },
-          ),
-          // Action button for deleting the transfer (if allowed)
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () {
-              // TODO: Show delete confirmation dialog
-              print('Delete transfer tapped');
             },
           ),
         ],
@@ -63,7 +51,7 @@ class TransferDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- 1. Prominent Amount/Summary Block ---
+            // Amount Block
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -78,11 +66,12 @@ class TransferDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '\$$amount',
-                    style: TextStyle(
+                    // 🚀 CHANGED: Using dynamic currency
+                    '$currency$amount',
+                    style: const TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade700,
+                      color: Colors.green,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -93,62 +82,53 @@ class TransferDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
-
             const SizedBox(height: 24),
 
-            // --- 2. Transfer Flow Section ---
+            // Flow Block (Blue -> Green)
             const Text(
               'Transfer Flow',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Divider(),
-
-            // From Account Detail
             _buildDetailRow(
-              context,
               icon: Icons.upload_file,
-              label: 'FROM Account',
+              label: 'FROM',
               value: fromAccount,
+              color: Colors.blue.shade700,
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Icon(Icons.arrow_downward, color: Colors.blueAccent),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 4.0,
+              ),
+              child: Icon(Icons.arrow_downward, color: Colors.grey.shade400),
             ),
-            // To Account Detail
             _buildDetailRow(
-              context,
               icon: Icons.download_outlined,
-              label: 'TO Account',
+              label: 'TO',
               value: toAccount,
-              isDestination: true,
+              color: Colors.green.shade700,
             ),
 
             const SizedBox(height: 32),
 
-            // --- 3. Additional Details Section ---
+            // Details Block
             const Text(
               'Transaction Details',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Divider(),
-
             _buildDetailRow(
-              context,
               icon: Icons.calendar_today_outlined,
               label: 'Date',
               value: date,
+              color: Colors.grey.shade600,
             ),
             _buildDetailRow(
-              context,
-              icon: Icons.credit_card,
-              label: 'Payment Method',
-              value: paymentMethod,
-            ),
-            _buildDetailRow(
-              context,
               icon: Icons.numbers,
               label: 'Reference #',
               value: ref,
+              color: Colors.grey.shade600,
             ),
           ],
         ),
@@ -156,24 +136,18 @@ class TransferDetailScreen extends StatelessWidget {
     );
   }
 
-  // Reusable widget to display a single detail row
-  Widget _buildDetailRow(
-    BuildContext context, {
+  Widget _buildDetailRow({
     required IconData icon,
     required String label,
     required String value,
-    bool isDestination = false,
+    required Color color,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            color: isDestination ? Colors.green : Colors.red,
-            size: 24,
-          ),
+          Icon(icon, color: color, size: 24),
           const SizedBox(width: 12),
           Expanded(
             flex: 2,
@@ -195,22 +169,3 @@ class TransferDetailScreen extends StatelessWidget {
     );
   }
 }
-
-// Example usage when navigating from the Transfer History screen:
-/*
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => TransferDetailScreen(
-      transferDetails: {
-        "from": "Primary Savings (1234)",
-        "to": "Investment Portfolio (9012)",
-        "amount": "1,500.00",
-        "date": "Sep 15, 2025",
-        "paymentMethod": "Bank Transfer",
-        "ref": "TRN-98765-ABC",
-      },
-    ),
-  ),
-);
-*/

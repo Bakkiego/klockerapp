@@ -1,157 +1,241 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 🚀 Added for Permissions
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 Added for Permissions
+import '../../../supabase/repo/supabase_service.dart'; // Adjust path if needed
+import 'components/add_department_screen.dart';
+import 'components/edit_department_screen.dart';
 
-// Import the necessary screens
-import './components/edit_department_screen.dart';
-// import 'department_detail_screen.dart'; // No longer needed if card is not tappable
-
-class DepartmentScreen extends StatelessWidget {
+class DepartmentScreen extends StatefulWidget {
   const DepartmentScreen({super.key});
 
-  // Mock data structure for demonstration
-  final List<Map<String, String>> _mockDepartments = const [
-    {
-      "id": "DEPT001",
-      "name": "Human Resources (HR)",
-      "branch": "HQ Branch",
-      "code": "HR-001",
-      "manager": "Sarah Connor",
-    },
-    {
-      "id": "DEPT002",
-      "name": "Finance & Accounting",
-      "branch": "Downtown LA",
-      "code": "FA-002",
-      "manager": "John Smith",
-    },
-    {
-      "id": "DEPT003",
-      "name": "Product Development",
-      "branch": "Midtown NY",
-      "code": "PD-003",
-      "manager": "Linda Ray",
-    },
-  ];
+  @override
+  State<DepartmentScreen> createState() => _DepartmentScreenState();
+}
 
-  // Helper to navigate directly to the Edit screen
-  void _navigateToEditScreen(
-    BuildContext context,
-    Map<String, String> departmentData,
-  ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        // Pass the department data to the Edit screen for pre-filling
-        builder: (context) =>
-            EditDepartmentScreen(initialDepartmentData: departmentData),
-      ),
-    );
+class _DepartmentScreenState extends State<DepartmentScreen> {
+  List<Map<String, dynamic>> _departments = [];
+  bool _isLoading = true;
+  String _searchQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDepartments();
   }
 
-  // Helper to show a simple delete confirmation
-  void _showDeleteConfirmation(BuildContext context, String departmentName) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Deletion'),
-        content: Text(
-          'Are you sure you want to delete the department: $departmentName?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+  Future<void> _fetchDepartments() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await SupabaseService().getDepartments();
+      if (mounted) {
+        setState(() {
+          _departments = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 🚀 THE BOUNCER: Check if they are allowed to manage departments
+    final userProvider = context.watch<UserProvider>();
+    final canManageDepartments = userProvider.can('manage_departments');
+
+    // Real-time search filtering
+    final filteredDepartments = _departments
+        .where(
+          (d) => d['name'].toString().toLowerCase().contains(
+            _searchQuery.toLowerCase(),
           ),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Implement actual delete logic
-              Navigator.of(context).pop(); // Close dialog
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$departmentName Deleted!')),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+        )
+        .toList();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+
+      // 🚀 GRANULAR SECURITY: Hide the Add button if they lack permission
+      floatingActionButton: canManageDepartments
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                // Navigates to Add Screen and refreshes list when returning!
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddDepartmentScreen(),
+                  ),
+                );
+                if (result == true) _fetchDepartments();
+              },
+              backgroundColor: const Color(0xFF00A36C),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                "Add Department",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          : null, // Completely hides the FAB
+
+      body: Column(
+        children: [
+          // Search Bar Section
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SearchBar(
+              hintText: "Search Departments...",
+              elevation: WidgetStateProperty.all(0),
+              backgroundColor: WidgetStateProperty.all(Colors.transparent),
+              side: WidgetStateProperty.all(
+                BorderSide(color: Colors.grey.withOpacity(0.5)),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+              leading: const Padding(
+                padding: EdgeInsets.only(left: 8.0),
+                child: Icon(Icons.search, color: Colors.grey),
+              ),
+            ),
+          ),
+
+          // Department List Section
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF00A36C)),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _fetchDepartments,
+                    color: const Color(0xFF00A36C),
+                    child: filteredDepartments.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 80),
+                            itemCount: filteredDepartments.length,
+                            itemBuilder: (context, index) {
+                              final department = filteredDepartments[index];
+
+                              // Safely parse the joined branch name and manager
+                              final branchName =
+                                  department['branches']?['name'] ??
+                                  'Unknown Branch';
+                              final managerName =
+                                  department['manager_name'] ?? 'Unassigned';
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16.0,
+                                  vertical: 6.0,
+                                ),
+                                child: Card(
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: BorderSide(
+                                      color: Colors.grey.withOpacity(0.2),
+                                    ),
+                                  ),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: const Color(
+                                        0xFF00A36C,
+                                      ).withOpacity(0.1),
+                                      child: const Icon(
+                                        Icons.people_alt_outlined,
+                                        color: Color(0xFF00A36C),
+                                      ),
+                                    ),
+
+                                    title: Text(
+                                      department['name'] ?? 'Unnamed',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Branch: $branchName",
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                          Text(
+                                            "Manager: $managerName",
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    // 🚀 GRANULAR SECURITY: Hide the Edit button if they lack permission
+                                    trailing: canManageDepartments
+                                        ? IconButton(
+                                            onPressed: () async {
+                                              final result = await Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      EditDepartmentScreen(
+                                                        initialDepartmentData:
+                                                            department,
+                                                      ),
+                                                ),
+                                              );
+                                              if (result == true)
+                                                _fetchDepartments();
+                                            },
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              color: Colors.grey,
+                                            ),
+                                          )
+                                        : null, // Return null to remove the trailing icon entirely
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Search Bar Section (Unchanged)
-        Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: SearchBar(
-                  hintText: "Department Name",
-                  trailing: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.search),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Department List Section (Modified)
-        Expanded(
-          child: ListView.builder(
-            itemCount: _mockDepartments.length,
-            itemBuilder: (context, index) {
-              final department = _mockDepartments[index];
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8.0,
-                  vertical: 4.0,
-                ),
-                child: Card(
-                  elevation: 2,
-                  // 🚩 CHANGE: GestureDetector removed, Card now directly wraps ListTile
-                  child: ListTile(
-                    // Department Name
-                    title: Text(
-                      department['name']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-
-                    // Branch & Manager Subtitle
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Branch: ${department['branch']!}"),
-                        Text("Manager: ${department['manager']!}"),
-                      ],
-                    ),
-
-                    // Trailing section for Actions (Unchanged, remains functional)
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // EDIT BUTTON
-                        IconButton(
-                          onPressed: () =>
-                              _navigateToEditScreen(context, department),
-                          icon: const Icon(Icons.edit),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.business_center_outlined,
+            size: 64,
+            color: Colors.grey.shade600,
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          const Text(
+            "No Departments Found",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const Text(
+            "Create departments to organize your employees.",
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 }

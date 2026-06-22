@@ -18,7 +18,8 @@ class DataCollectorList {
   String? selectedBranch;
   String? selectedDept;
   String? selectedRole;
-
+  String? selectedJobTitle;
+  List<String> jobTitleOptions = [];
   List<String> branchOptions = ["Loading..."];
   List<String> deptOptions = ["Loading..."];
 
@@ -87,6 +88,18 @@ class DataCollectorList {
             value: selectedRole,
             onChanged: (selectedValue) {
               selectedRole = selectedValue;
+              onRefresh();
+            },
+          ),
+          KDropDownField(
+            hintText: "Company Job Title (e.g. Chef)",
+            // If the manager hasn't created any titles yet, show a fallback
+            items: jobTitleOptions.isEmpty
+                ? ['No Titles Created']
+                : jobTitleOptions,
+            value: selectedJobTitle,
+            onChanged: (selectedValue) {
+              selectedJobTitle = selectedValue;
               onRefresh();
             },
           ),

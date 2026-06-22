@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
+import '../../../supabase/repo/supabase_service.dart';
 
 class EditSalaryRateScreen extends StatefulWidget {
-  // Receives the existing employee's salary data
-  final Map<String, String> initialSalaryData;
-
+  final Map<String, dynamic> initialSalaryData;
   const EditSalaryRateScreen({super.key, required this.initialSalaryData});
 
   @override
@@ -11,18 +12,22 @@ class EditSalaryRateScreen extends StatefulWidget {
 }
 
 class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
+  final SupabaseService _service = SupabaseService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  // Controllers
-  late TextEditingController _employeeNameController;
   late TextEditingController _grossSalaryController;
-  late TextEditingController _netSalaryController;
-  late TextEditingController _effectiveDateController;
+  late TextEditingController _hourlyRateController;
+  late TextEditingController _allowancesController;
 
-  // State for selection fields
-  late String? _selectedPayrollType;
+  // 🚀 MULTIPLE DEDUCTIONS STATE
+  List<Map<String, dynamic>> _deductionsList = [];
+  final TextEditingController _newDedNameController = TextEditingController();
+  final TextEditingController _newDedValueController = TextEditingController();
+  String _newDedType = 'fixed';
 
-  // Mock lists
+  String? _selectedPayrollType;
+  bool _isSubmitting = false;
+
   final List<String> _payrollTypes = const [
     'Standard (Monthly)',
     'Hourly',
@@ -30,143 +35,104 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
     'Commission Based',
   ];
 
-  // Note: Since this is an edit screen, we display the name/ID but usually don't let
-  // the user change the employee itself. We just pass the name back for display purposes.
-  late String _employeeIdName;
-
-  // Helper to remove formatting for controllers
-  String _cleanAmount(String? amount) {
-    if (amount == null) return '';
-    // Removes commas, currency symbols, and spaces
-    return amount.replaceAll(',', '').replaceAll('\$', '').trim();
-  }
-
   @override
   void initState() {
     super.initState();
-
-    // Initialize data from the passed map
-    _employeeIdName =
-        '${widget.initialSalaryData['name']} (${widget.initialSalaryData['id']})';
     _selectedPayrollType = widget.initialSalaryData['payrollType'];
-
-    // Initialize controllers with cleaned data
-    _employeeNameController = TextEditingController(
-      text: widget.initialSalaryData['name'],
-    );
-    _grossSalaryController = TextEditingController(
-      text: _cleanAmount(widget.initialSalaryData['grossSalary']),
-    );
-    _netSalaryController = TextEditingController(
-      text: _cleanAmount(widget.initialSalaryData['netSalary']),
-    );
-
-    // Assume an 'effectiveDate' field exists in the data map for a real application
-    _effectiveDateController = TextEditingController(
-      text: widget.initialSalaryData['effectiveDate'] ?? '2025-01-01',
-    );
-
-    // Ensure the payroll type is one of the valid options, otherwise default to the first
-    if (!_payrollTypes.contains(_selectedPayrollType)) {
+    if (!_payrollTypes.contains(_selectedPayrollType))
       _selectedPayrollType = _payrollTypes.first;
+
+    final gross = widget.initialSalaryData['grossSalary']?.toString() ?? '';
+    _grossSalaryController = TextEditingController(text: gross);
+    _hourlyRateController = TextEditingController(text: gross);
+
+    final allowances = widget.initialSalaryData['allowances']?.toString() ?? '';
+    _allowancesController = TextEditingController(text: allowances);
+
+    // 🚀 LOAD EXISTING DEDUCTIONS ARRAY FROM DB
+    if (widget.initialSalaryData['rawDeductions'] != null) {
+      _deductionsList = List<Map<String, dynamic>>.from(
+        widget.initialSalaryData['rawDeductions'],
+      );
     }
   }
 
   @override
   void dispose() {
-    _employeeNameController.dispose();
     _grossSalaryController.dispose();
-    _netSalaryController.dispose();
-    _effectiveDateController.dispose();
+    _hourlyRateController.dispose();
+    _allowancesController.dispose();
+    _newDedNameController.dispose();
+    _newDedValueController.dispose();
     super.dispose();
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}}';
-  }
+  void _addDeduction() {
+    if (_newDedNameController.text.trim().isEmpty ||
+        _newDedValueController.text.trim().isEmpty)
+      return;
+    final val = double.tryParse(_newDedValueController.text) ?? 0.0;
+    if (val <= 0) return;
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate:
-          DateTime.tryParse(_effectiveDateController.text) ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null) {
-      setState(() {
-        _effectiveDateController.text = _formatDate(picked);
+    setState(() {
+      _deductionsList.add({
+        'name': _newDedNameController.text.trim(),
+        'type': _newDedType,
+        'value': val,
       });
-    }
+      _newDedNameController.clear();
+      _newDedValueController.clear();
+    });
   }
 
-  void _saveChanges() {
+  Future<void> _submitSalaryRate() async {
     if (_formKey.currentState!.validate()) {
-      final updatedSalaryData = {
-        'id': widget.initialSalaryData['id'], // Employee ID
-        'type': _selectedPayrollType,
-        'grossSalary': _grossSalaryController.text,
-        'netSalary': _netSalaryController
-            .text, // Often calculated, but editable here for flexibility
-        'effectiveDate': _effectiveDateController.text,
-      };
+      setState(() => _isSubmitting = true);
+      try {
+        String rateText = _selectedPayrollType == 'Hourly'
+            ? _hourlyRateController.text
+            : _grossSalaryController.text;
+        double baseRate = double.tryParse(rateText) ?? 0.00;
+        double allowancesVal =
+            double.tryParse(_allowancesController.text) ?? 0.0;
 
-      // TODO: Implement logic to update salary data in your backend
-      print("Salary Rate Updated: $updatedSalaryData");
+        await _service.upsertSalaryConfig(
+          profileId: widget.initialSalaryData['id'],
+          payrollType: _selectedPayrollType!,
+          baseRate: baseRate,
+          structuredDeductions:
+              _deductionsList, // 🚀 Passes the modified array!
+          allowances: allowancesVal,
+        );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Salary rate updated successfully!')),
-      );
-      // Pop twice: back from Edit -> Detail -> List
-      Navigator.popUntil(
-        context,
-        (route) => route.isFirst || route.settings.name == '/salaryList',
-      );
-      // A more robust navigation would be needed here depending on your app structure
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Salary Updated!'),
+              backgroundColor: Color(0xFF00A36C),
+            ),
+          );
+          Navigator.pop(context);
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
-  }
-
-  void _showDeleteConfirmation() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Salary Deletion'),
-        content: Text(
-          'Are you sure you want to delete the current salary record for ${widget.initialSalaryData['name']}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Implement actual salary record deletion logic
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to the detail screen
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Salary Record Deleted!')),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor =
-        Theme.of(
-          context,
-        ).elevatedButtonTheme.style?.backgroundColor?.resolve({}) ??
-        Colors.blue;
+    final currency = context.watch<UserProvider>().currencySymbol;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Salary Rate: ${widget.initialSalaryData['name']}'),
+        title: Text('Edit Salary: ${widget.initialSalaryData['name']}'),
       ),
       body: Form(
         key: _formKey,
@@ -175,127 +141,199 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Display Employee Name (Non-editable)
-              ListTile(
-                leading: const Icon(Icons.person, color: Colors.indigo),
-                title: Text(
-                  _employeeIdName,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text('Employee cannot be changed here.'),
-              ),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // 1. Payroll Type Selection
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(
                   labelText: 'Payroll Type',
                   prefixIcon: Icon(Icons.work_outline),
                 ),
                 value: _selectedPayrollType,
-                items: _payrollTypes.map((String type) {
-                  return DropdownMenuItem<String>(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedPayrollType = newValue;
-                  });
-                },
-                validator: (value) =>
-                    value == null ? 'Select a payroll type' : null,
+                items: _payrollTypes
+                    .map(
+                      (type) =>
+                          DropdownMenuItem(value: type, child: Text(type)),
+                    )
+                    .toList(),
+                onChanged: (val) => setState(() => _selectedPayrollType = val),
               ),
               const SizedBox(height: 16),
-
-              // 2. Gross Salary / Hourly Rate
               TextFormField(
-                controller:
-                    _grossSalaryController, // Reuse controller for Gross/Hourly
+                controller: _selectedPayrollType == 'Hourly'
+                    ? _hourlyRateController
+                    : _grossSalaryController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: _selectedPayrollType == 'Hourly'
                       ? 'Hourly Rate'
-                      : 'Gross Salary (Annual/Fixed)',
-                  prefixText: '\$',
+                      : 'Gross Salary',
+                  prefixText: '$currency ',
                   prefixIcon: Icon(
                     _selectedPayrollType == 'Hourly'
                         ? Icons.schedule
                         : Icons.attach_money,
                   ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Enter the amount';
-                  if (double.tryParse(value) == null)
-                    return 'Enter a valid number';
-                  return null;
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Required' : null,
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              TextFormField(
+                controller: _allowancesController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Default Allowances',
+                  prefixText: '$currency ',
+                  prefixIcon: const Icon(Icons.card_giftcard),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+
+              // 🚀 DEDUCTIONS CONFIGURATOR
+              const Text(
+                "Recurring Deductions",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.redAccent,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.2)),
+                ),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _newDedNameController,
+                      decoration: const InputDecoration(
+                        labelText: "Deduction Name",
+                        filled: true,
+                        fillColor: Colors.transparent,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _newDedValueController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: "Value",
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              prefixText: _newDedType == 'fixed'
+                                  ? '$currency '
+                                  : null,
+                              suffixText: _newDedType == 'percentage'
+                                  ? ' %'
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text("Fixed"),
+                          selected: _newDedType == 'fixed',
+                          onSelected: (val) {
+                            if (val) setState(() => _newDedType = 'fixed');
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        ChoiceChip(
+                          label: const Text("%"),
+                          selected: _newDedType == 'percentage',
+                          onSelected: (val) {
+                            if (val) setState(() => _newDedType = 'percentage');
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _addDeduction,
+                      icon: const Icon(Icons.add),
+                      label: const Text("Add Deduction"),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 🚀 CURRENT DEDUCTIONS LIST
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _deductionsList.length,
+                itemBuilder: (context, index) {
+                  final item = _deductionsList[index];
+                  final isPercent = item['type'] == 'percentage';
+                  return Card(
+                    elevation: 0,
+                    color: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      side: BorderSide(color: Colors.red.withOpacity(0.2)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        item['name'],
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        isPercent ? 'Percentage-based' : 'Fixed amount',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isPercent
+                                ? "${item['value']}%"
+                                : "$currency${item['value']}",
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.grey),
+                            onPressed: () =>
+                                setState(() => _deductionsList.removeAt(index)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 },
               ),
-              const SizedBox(height: 16),
-
-              // 3. Net Salary (Optional: Can be calculated but included for completeness)
-              TextFormField(
-                controller: _netSalaryController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Net Salary (After Deductions)',
-                  prefixText: '\$',
-                  prefixIcon: Icon(Icons.paid_outlined),
-                ),
-                // Validation can be complex here; simple number check for now
-                validator: (value) =>
-                    (value != null &&
-                        value.isNotEmpty &&
-                        double.tryParse(value) == null)
-                    ? 'Enter a valid number'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-
-              // 4. Effective Date
-              TextFormField(
-                controller: _effectiveDateController,
-                readOnly: true,
-                onTap: () => _selectDate(context),
-                decoration: const InputDecoration(
-                  labelText: 'Effective Date',
-                  prefixIcon: Icon(Icons.calendar_today),
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Select effective date' : null,
-              ),
-
-              const SizedBox(height: 48),
-
-              // Save Button
+              const SizedBox(height: 40),
               ElevatedButton.icon(
-                onPressed: _saveChanges,
-                icon: const Icon(Icons.update),
-                label: const Text(
-                  'Save Changes',
-                  style: TextStyle(fontSize: 18),
+                onPressed: _isSubmitting ? null : _submitSalaryRate,
+                icon: _isSubmitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(
+                  _isSubmitting ? 'Saving...' : 'Update Salary',
+                  style: const TextStyle(fontSize: 18),
                 ),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: primaryColor,
+                  backgroundColor: const Color(0xFF00A36C),
                   foregroundColor: Colors.white,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Delete Button
-              OutlinedButton.icon(
-                onPressed: _showDeleteConfirmation,
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                label: const Text(
-                  'Delete Salary Record',
-                  style: TextStyle(color: Colors.red),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.red),
                 ),
               ),
             ],

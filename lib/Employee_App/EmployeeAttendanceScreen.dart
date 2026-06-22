@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:klockerapp/screens/employee-screens/components/time_management_components/custom_date_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:klockerapp/supabase/repo/supabase_service.dart';
 
 class EmployeeAttendanceScreen extends StatefulWidget {
   const EmployeeAttendanceScreen({super.key});
@@ -10,149 +11,275 @@ class EmployeeAttendanceScreen extends StatefulWidget {
 }
 
 class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _attendanceRecords = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAttendance();
+  }
+
+  Future<void> _fetchAttendance() async {
+    setState(() => _isLoading = true);
+    try {
+      final records = await SupabaseService().getMyAttendance();
+      if (mounted) {
+        setState(() {
+          _attendanceRecords = records;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error loading attendance: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Helper to format timestamps from Supabase
+  String _formatTime(String? timestamp) {
+    if (timestamp == null) return "--:--";
+    final date = DateTime.parse(timestamp).toLocal();
+    return DateFormat('hh:mm a').format(date); // e.g., 08:30 AM
+  }
+
+  // Helper to format dates
+  String _formatDate(String? timestamp) {
+    if (timestamp == null) return "Unknown Date";
+    final date = DateTime.parse(timestamp).toLocal();
+    return DateFormat('MMM dd, yyyy').format(date); // e.g., Oct 24, 2024
+  }
+
   @override
   Widget build(BuildContext context) {
-    // --- FIX: Wrapped in Scaffold to provide the Material ancestor ---
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Attendance'),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const CustomDatePicker(),
-              const SizedBox(height: 24),
-              const EmployeePersonalSummary(),
-              const SizedBox(height: 32),
-              const Text(
-                "My Attendance History",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              const EmployeeAttendanceLogs(),
-            ],
-          ),
+        title: const Text(
+          "Attendance History",
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00A36C)),
+            )
+          : _attendanceRecords.isEmpty
+          ? _buildEmptyState()
+          : RefreshIndicator(
+              onRefresh: _fetchAttendance,
+              color: const Color(0xFF00A36C),
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _attendanceRecords.length,
+                itemBuilder: (context, index) {
+                  final record = _attendanceRecords[index];
+
+                  final clockIn = record['clock_in'];
+                  final clockOut = record['clock_out'];
+                  final status =
+                      record['status'] ?? 'completed'; // From your SQL!
+                  final minutes = record['standard_minutes'] ?? 0;
+
+                  final hoursWorked = (minutes / 60).toStringAsFixed(1);
+                  final isOngoing = clockOut == null;
+
+                  return Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top Row: Date & Status
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // 🚀 FIXED: Expanded forces the text to take available space without pushing the badge off screen
+                              Expanded(
+                                child: Text(
+                                  _formatDate(clockIn),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildStatusBadge(isOngoing, status),
+                            ],
+                          ),
+                          const Divider(height: 24),
+
+                          // Middle Row: Clock In & Out Times
+                          Row(
+                            children: [
+                              // 🚀 FIXED: Expanded makes the columns share 50/50 space perfectly
+                              Expanded(
+                                child: _buildTimeColumn(
+                                  "Clock In",
+                                  _formatTime(clockIn),
+                                  Icons.login,
+                                  Colors.green,
+                                ),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Icon(
+                                  Icons.arrow_forward,
+                                  color: Colors.grey,
+                                  size: 20,
+                                ),
+                              ),
+                              Expanded(
+                                child: _buildTimeColumn(
+                                  "Clock Out",
+                                  _formatTime(clockOut),
+                                  Icons.logout,
+                                  isOngoing ? Colors.grey : Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          // Bottom Row: Total Hours (Only show if clocked out)
+                          if (!isOngoing) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.timer,
+                                    size: 16,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // 🚀 FIXED: Flexible prevents long hour/minute strings from breaking the Row
+                                  Flexible(
+                                    child: Text(
+                                      "Total Time: $hoursWorked hrs ($minutes mins)",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
-}
 
-class EmployeePersonalSummary extends StatelessWidget {
-  const EmployeePersonalSummary({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // Using the same Wrap/Row logic as HR but with personal metrics
-    return Row(
+  // Helper widget to make times look clean
+  // Helper widget to make times look clean
+  Widget _buildTimeColumn(
+    String label,
+    String time,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
       children: [
-        _buildMetricCard(
-          context,
-          "Hours",
-          "156.5",
-          Icons.access_time_filled,
-          Colors.blue,
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+          overflow: TextOverflow.ellipsis, // Prevents label overflow
         ),
-        const SizedBox(width: 10),
-        _buildMetricCard(context, "Overtime", "8.2", Icons.bolt, Colors.purple),
-        const SizedBox(width: 10),
-        _buildMetricCard(
-          context,
-          "Punctual",
-          "95%",
-          Icons.verified_user,
-          Colors.green,
+        FittedBox(
+          // 🚀 NEW: Magically shrinks the text if it's too wide!
+          fit: BoxFit.scaleDown,
+          child: Text(
+            time,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildMetricCard(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-          ],
+  // Helper widget for the Status Pill (Catches your "Early Leave" SQL logic!)
+  Widget _buildStatusBadge(bool isOngoing, String status) {
+    Color bgColor = Colors.green.withOpacity(0.1);
+    Color textColor = Colors.green;
+    String label = "Completed";
+
+    if (isOngoing) {
+      bgColor = Colors.blue.withOpacity(0.1);
+      textColor = Colors.blue;
+      label = "Active Shift";
+    } else if (status == 'early_leave_pending_approval') {
+      bgColor = Colors.orange.withOpacity(0.1);
+      textColor = Colors.orange;
+      label = "Early Leave";
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
   }
-}
 
-class EmployeeAttendanceLogs extends StatelessWidget {
-  const EmployeeAttendanceLogs({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // Mock data for the specific employee
-    final List<Map<String, String>> myLogs = [
-      {"date": "Apr 17", "in": "09:02", "out": "17:05", "status": "Present"},
-      {"date": "Apr 16", "in": "09:15", "out": "17:00", "status": "Late"},
-      {"date": "Apr 15", "in": "08:58", "out": "16:55", "status": "Present"},
-    ];
-
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      itemCount: myLogs.length,
-      itemBuilder: (context, index) {
-        final log = myLogs[index];
-        final bool isLate = log['status'] == "Late";
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: (isLate ? Colors.orange : Colors.green)
-                  .withOpacity(0.2),
-              child: Icon(
-                isLate ? Icons.timer_outlined : Icons.check,
-                color: isLate ? Colors.orange : Colors.green,
-                size: 20,
-              ),
-            ),
-            title: Text(
-              log['date']!,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text("In: ${log['in']}  •  Out: ${log['out']}"),
-            trailing: Text(
-              log['status']!,
-              style: TextStyle(
-                color: isLate ? Colors.orange : Colors.green,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.history_toggle_off,
+            size: 80,
+            color: Colors.grey.withOpacity(0.3),
           ),
-        );
-      },
+          const SizedBox(height: 16),
+          const Text(
+            "No attendance records yet",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Your clock-in history will appear here",
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 }

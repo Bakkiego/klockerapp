@@ -1,77 +1,89 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 🚀 Added for Permissions
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 Added for Permissions
+
 import '../company-screens/department_screen.dart';
 import '../company-screens/branch_screen.dart';
-import './components/add_branch_screen.dart';
-import './components/add_department_screen.dart';
 
-class CompanyScreen extends StatefulWidget {
+class CompanyScreen extends StatelessWidget {
   const CompanyScreen({super.key});
 
   @override
-  State<CompanyScreen> createState() => _CompanyScreenState();
-}
+  Widget build(BuildContext context) {
+    // 🚀 THE BOUNCER: Check their exact keys
+    final userProvider = context.watch<UserProvider>();
+    final canManageBranches = userProvider.can('manage_branches');
+    final canManageDepartments = userProvider.can('manage_departments');
 
-class _CompanyScreenState extends State<CompanyScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+    List<Tab> myTabs = [];
+    List<Widget> myScreens = [];
 
-  @override
-  void initState() {
-    super.initState();
-    // Initialize the TabController with a length of 2 (Branch and Department)
-    _tabController = TabController(length: 2, vsync: this);
-  }
+    // 🚀 DYNAMIC TAB 1: Branches
+    if (canManageBranches) {
+      myTabs.add(const Tab(text: "Branches"));
+      myScreens.add(const BranchScreen());
+    }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+    // 🚀 DYNAMIC TAB 2: Departments
+    if (canManageDepartments) {
+      myTabs.add(const Tab(text: "Departments"));
+      myScreens.add(const DepartmentScreen());
+    }
 
-  // --- Logic for the Floating Action Button ---
-  void _handleFabPress() {
-    final currentIndex = _tabController.index;
-
-    // Check the index of the currently selected tab
-    if (currentIndex == 0) {
-      // 0 is the Branch tab
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const AddBranchScreen()),
-      );
-    } else if (currentIndex == 1) {
-      // 1 is the Department tab
-      // TODO: Uncomment and replace with your actual AddDepartmentScreen() when ready
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const AddDepartmentScreen()),
-      );
-      print(
-        "FAB pressed on Department tab - TODO: Navigate to AddDepartmentScreen",
+    // Fallback: If they somehow bypass the menu with zero keys
+    if (myTabs.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Company Setup',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 64,
+                color: Colors.grey.withOpacity(0.5),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "Access Denied",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "You do not have permission to view this section.",
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
       );
     }
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        bottom: TabBar(
-          controller: _tabController, // Attach controller to TabBar
-          tabs: const [
-            Tab(child: Text("Branch")),
-            Tab(child: Text("Department")),
-          ],
+    return DefaultTabController(
+      length: myTabs
+          .length, // 🚀 Automatically sizes based on how many keys they have
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Company Setup',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          bottom: TabBar(
+            indicatorColor: const Color(0xFF00A36C),
+            labelColor: const Color(0xFF00A36C),
+            unselectedLabelColor: Colors.grey,
+            tabs: myTabs, // 🚀 Only loads the tabs they are allowed to see
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController, // Attach controller to TabBarView
-        children: const [BranchScreen(), DepartmentScreen()],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _handleFabPress, // Call our logic function
-        child: const Icon(Icons.add),
+        body: TabBarView(
+          children:
+              myScreens, // 🚀 Only loads the screens they are allowed to see
+        ),
       ),
     );
   }

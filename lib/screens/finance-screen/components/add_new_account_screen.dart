@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../supabase/repo/supabase_service.dart';
+
 class AddNewAccountScreen extends StatefulWidget {
   const AddNewAccountScreen({super.key});
 
@@ -35,21 +37,43 @@ class _AddNewAccountScreenState extends State<AddNewAccountScreen> {
     super.dispose();
   }
 
-  void _submitNewAccount() {
+  Future<void> _submitNewAccount() async {
+    // <-- Add async
     if (_formKey.currentState!.validate()) {
-      final newAccountData = {
-        'name': _nameController.text,
-        'type': _selectedAccountType,
-        'initialBalance': _initialBalanceController.text,
-      };
+      try {
+        final initialBalance =
+            double.tryParse(_initialBalanceController.text) ?? 0.0;
 
-      // TODO: Implement logic to save newAccountData to your backend
-      print("New Account Submitted: $newAccountData");
+        // 🚀 Call your new Supabase Service
+        await SupabaseService().addAccount(
+          name: _nameController.text.trim(),
+          type: _selectedAccountType ?? 'Other',
+          initialBalance: initialBalance,
+          // You can add TextFields for these later, or auto-generate them!
+          accountNumber: 'TBD',
+          branch: 'Main',
+          code: '000',
+        );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account added successfully!')),
-      );
-      Navigator.pop(context); // Go back to the main list
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account added successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(
+            context,
+            true,
+          ); // <-- Pass 'true' back so the list knows to refresh!
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
@@ -132,7 +156,7 @@ class _AddNewAccountScreenState extends State<AddNewAccountScreen> {
                 ),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.indigo,
+                  backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                 ),
               ),

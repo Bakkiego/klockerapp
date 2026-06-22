@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../supabase/repo/supabase_service.dart';
 
 class EditDepartmentScreen extends StatefulWidget {
-  // Receives the current department data to pre-fill the form
-  final Map<String, String> initialDepartmentData;
+  final Map<String, dynamic> initialDepartmentData;
 
   const EditDepartmentScreen({super.key, required this.initialDepartmentData});
 
@@ -11,92 +11,116 @@ class EditDepartmentScreen extends StatefulWidget {
 }
 
 class _EditDepartmentScreenState extends State<EditDepartmentScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _codeController;
+  late TextEditingController _managerController;
 
-  // Controllers for Department details
-  late TextEditingController _departmentNameController;
-  late TextEditingController _departmentCodeController;
-
-  // State for selection fields (Department Manager)
-  late String? _selectedManager;
-
-  // Mock list of potential managers
-  final List<String> _availableManagers = const [
-    'Sarah Connor',
-    'John Smith',
-    'Linda Ray',
-    'Michael Chen',
-  ];
+  String? _selectedBranchId;
+  List<Map<String, dynamic>> _branches = [];
+  bool _isLoading = true;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize controllers with existing data
-    _departmentNameController = TextEditingController(
-      text: widget.initialDepartmentData['name'],
+    _nameController = TextEditingController(
+      text: widget.initialDepartmentData['name']?.toString() ?? '',
     );
-    _departmentCodeController = TextEditingController(
-      text: widget.initialDepartmentData['code'],
+    _codeController = TextEditingController(
+      text: widget.initialDepartmentData['code']?.toString() ?? '',
     );
+    _managerController = TextEditingController(
+      text: widget.initialDepartmentData['manager_name']?.toString() ?? '',
+    );
+    _selectedBranchId = widget.initialDepartmentData['branch_id']?.toString();
+    _fetchBranches();
+  }
 
-    // Initialize selected manager (handle case where data might not be in the mock list)
-    _selectedManager = widget.initialDepartmentData['manager'];
-    if (_selectedManager != null &&
-        !_availableManagers.contains(_selectedManager)) {
-      // If the current manager is not in the list, we might reset it or add them temporarily
-      _selectedManager = null;
+  Future<void> _fetchBranches() async {
+    try {
+      final branches = await SupabaseService().getAdminBranches();
+      if (mounted)
+        setState(() {
+          _branches = branches;
+          _isLoading = false;
+        });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  @override
-  void dispose() {
-    _departmentNameController.dispose();
-    _departmentCodeController.dispose();
-    super.dispose();
-  }
-
-  void _saveChanges() {
+  Future<void> _saveChanges() async {
     if (_formKey.currentState!.validate()) {
-      final updatedDepartmentData = {
-        'id': widget.initialDepartmentData['id'], // Crucial for database update
-        'name': _departmentNameController.text,
-        'code': _departmentCodeController.text,
-        'manager': _selectedManager,
-      };
+      setState(() => _isSubmitting = true);
+      try {
+        await SupabaseService().updateDepartment(
+          id: widget.initialDepartmentData['id'],
+          name: _nameController.text.trim(),
+          code: _codeController.text.trim(),
+          branchId: _selectedBranchId!,
+          managerName: _managerController.text.trim(),
+        );
 
-      // TODO: Implement logic to update departmentData in your backend
-      print("Department changes saved: $updatedDepartmentData");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Department updated successfully!')),
-      );
-      Navigator.pop(context); // Go back to the main list/detail screen
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Department Updated!'),
+              backgroundColor: Color(0xFF00A36C),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
     }
   }
 
   void _showDeleteConfirmation() {
-    // Standard delete confirmation dialog
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (c) => AlertDialog(
         title: const Text('Confirm Deletion'),
-        content: Text(
-          'Are you sure you want to delete the department: ${widget.initialDepartmentData['name']}? This action cannot be undone.',
-        ),
+        content: const Text('Are you sure you want to delete this department?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.pop(c),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // TODO: Implement actual delete logic
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to the list screen
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Department Deleted!')),
-              );
+            onPressed: () async {
+              Navigator.pop(c);
+              setState(() => _isSubmitting = true);
+              try {
+                await SupabaseService().deleteDepartment(
+                  widget.initialDepartmentData['id'],
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Department Deleted!'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  Navigator.pop(context, true);
+                }
+              } catch (e) {
+                if (mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+              } finally {
+                if (mounted) setState(() => _isSubmitting = false);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -108,107 +132,95 @@ class _EditDepartmentScreenState extends State<EditDepartmentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get the current theme's color for styling consistency
-    final primaryColor =
-        Theme.of(
-          context,
-        ).elevatedButtonTheme.style?.backgroundColor?.resolve({}) ??
-        Colors.blue;
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Edit Department: ${widget.initialDepartmentData['name']}'),
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Department Name
-              TextFormField(
-                controller: _departmentNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Department Name',
-                  prefixIcon: Icon(Icons.business_center_outlined),
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter department name' : null,
-              ),
-              const SizedBox(height: 16),
-
-              // 2. Department Code
-              TextFormField(
-                controller: _departmentCodeController,
-                keyboardType: TextInputType.text,
-                decoration: const InputDecoration(
-                  labelText: 'Department Code/ID',
-                  prefixIcon: Icon(Icons.tag),
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Enter a department code' : null,
-              ),
-              const SizedBox(height: 16),
-
-              // 3. Manager Assignment (Dropdown)
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(
-                  labelText: 'Assign Manager',
-                  prefixIcon: const Icon(Icons.person_outline),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+      appBar: AppBar(title: const Text('Edit Department')),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00A36C)),
+            )
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16.0),
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Department Name',
+                      prefixIcon: Icon(Icons.business_center),
+                    ),
+                    validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
-                ),
-                value: _selectedManager,
-                items: _availableManagers.map((String manager) {
-                  return DropdownMenuItem<String>(
-                    value: manager,
-                    child: Text(manager),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedManager = newValue;
-                  });
-                },
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _codeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Department Code',
+                      prefixIcon: Icon(Icons.tag),
+                    ),
+                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Assign to Branch',
+                      prefixIcon: Icon(Icons.location_city),
+                    ),
+                    value: _selectedBranchId,
+                    items: _branches
+                        .map(
+                          (branch) => DropdownMenuItem<String>(
+                            value: branch['id'],
+                            child: Text(branch['name']),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) => setState(() => _selectedBranchId = val),
+                    validator: (val) => val == null ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _managerController,
+                    decoration: const InputDecoration(
+                      labelText: 'Manager Name (Optional)',
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                  ),
+                  const SizedBox(height: 48),
+
+                  ElevatedButton.icon(
+                    onPressed: _isSubmitting ? null : _saveChanges,
+                    icon: const Icon(Icons.save),
+                    label: Text(
+                      _isSubmitting ? 'Saving...' : 'Save Changes',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: const Color(0xFF00A36C),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  OutlinedButton.icon(
+                    onPressed: _isSubmitting ? null : _showDeleteConfirmation,
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    label: const Text(
+                      'Delete Department',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                  ),
+                ],
               ),
-
-              const SizedBox(height: 48),
-
-              // Save Button
-              ElevatedButton.icon(
-                onPressed: _saveChanges,
-                icon: const Icon(Icons.update),
-                label: const Text(
-                  'Save Changes',
-                  style: TextStyle(fontSize: 18),
-                ),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Delete Button
-              OutlinedButton.icon(
-                onPressed: _showDeleteConfirmation,
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                label: const Text(
-                  'Delete Department',
-                  style: TextStyle(color: Colors.red),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.red),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

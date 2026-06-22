@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/models/app_enums.dart';
-import 'package:klockerapp/screens/employee_welcome_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../components/bottom_nav.dart';
 import '../supabase/repo/supabase_service.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:klockerapp/screens/pending_approval_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   static String id = 'login_screen';
@@ -13,7 +17,126 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool isSignUp = false;
+  final emailCont = TextEditingController();
+  final passCont = TextEditingController();
+  bool _isLoading = false;
+
+  void _showFriendlyError(String rawError, {bool isAuthError = false}) {
+    String friendlyMessage = "Something went wrong. Please try again.";
+
+    if (isAuthError) {
+      if (rawError.toLowerCase().contains("invalid login credentials")) {
+        friendlyMessage = "Incorrect email or password. Let's try that again.";
+      } else if (rawError.toLowerCase().contains("email not confirmed")) {
+        friendlyMessage =
+            "Please check your email and click the verification link before logging in.";
+      } else if (rawError.toLowerCase().contains("user not found")) {
+        friendlyMessage = "We couldn't find an account with that email.";
+      } else {
+        friendlyMessage = rawError;
+      }
+    } else {
+      if (rawError.contains("SocketException") ||
+          rawError.contains("Failed host lookup")) {
+        friendlyMessage =
+            "No internet connection. Please check your Wi-Fi or cellular data.";
+      } else if (rawError.contains("single JSON object")) {
+        friendlyMessage =
+            "Your account is set up, but your profile data is incomplete. Please contact support.";
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(child: Text(friendlyMessage)),
+            ],
+          ),
+          backgroundColor: Colors.redAccent.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _handleSignIn() async {
+    if (emailCont.text.isEmpty || passCont.text.isEmpty) {
+      _showFriendlyError(
+        "Please enter both your email and password.",
+        isAuthError: true,
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final userData = await SupabaseService().signInUser(
+        emailCont.text.trim(),
+        passCont.text.trim(),
+      );
+
+      final userRole role = userRole.fromString(userData['role'] ?? 'employee');
+      final String approvalStatus =
+          userData['approval_status'] ?? 'approved'; // 🚀 Grab status
+
+      if (mounted) {
+        // 🚀 GATE 1: Are they pending? Send to Waiting Room.
+        if (approvalStatus == 'pending') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const PendingApprovalScreen(),
+            ),
+          );
+          return;
+        } else if (approvalStatus == 'rejected') {
+          await Supabase.instance.client.auth.signOut();
+          _showFriendlyError(
+            "Access Denied: Your account has been rejected by HR.",
+          );
+          return;
+        }
+        // ✅ If we get here, they are approved! Let them into the system.
+        context.read<UserProvider>().setUserProfile(userData);
+
+        // 🚀 THE NEW INJECTION: Fetch and set permissions on manual login
+        final String legacyRole = userData['role'] ?? 'employee';
+        final String? customRoleId = userData['custom_role_id'];
+
+        final permissions = await SupabaseService().getUserPermissions(
+          customRoleId,
+          legacyRole,
+        );
+        context.read<UserProvider>().setPermissions(permissions);
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => BottomNav(role: role)),
+        );
+      }
+    } on AuthException catch (e) {
+      _showFriendlyError(e.message, isAuthError: true);
+    }
+  }
+
+  Future<void> _launchWebsite() async {
+    final Uri url = Uri.parse(
+      'https://yourwebsite.com',
+    ); // TODO: Replace with your actual URL
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      _showFriendlyError(
+        "Could not open the browser. Please visit our website manually.",
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,414 +145,128 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 80),
-            Center(
-              child: SizedBox(
-                width: 120,
-                child: Image.asset('images/logo.png'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              "Welcome to KlockerApp",
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              "Manage your workforce with EASE",
-              style: TextStyle(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-            const SizedBox(height: 40),
-
-            // --- THE PILL TOGGLE ---
-            Container(
-              width: 300,
-              height: 50,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.grey[850]
-                    : Colors.grey[300], // This restores the "pill" track look
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: Stack(
+      body: SafeArea(
+        // 🚀 WEB FIX: Center and Constrain the width!
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 450,
+            ), // Locks the width for web
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  AnimatedAlign(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    alignment: isSignUp
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      width: 150,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        borderRadius: BorderRadius.circular(25),
+                  const SizedBox(height: 40),
+                  Center(
+                    child: SizedBox(
+                      width: 120,
+                      child: Image.asset('images/logo.png'),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    "Welcome Back",
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Sign in to manage your workforce",
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 50),
+
+                  // --- THE FORM AREA ---
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: isDark ? theme.colorScheme.surface : Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark
+                              ? Colors.black54
+                              : Colors.black.withOpacity(0.05),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: emailCont,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: "Email",
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        TextFormField(
+                          controller: passCont,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: "Password",
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        _isLoading
+                            ? const CircularProgressIndicator(
+                                color: Color(0xFF00A36C),
+                              )
+                            : ElevatedButton(
+                                onPressed: _handleSignIn,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF00A36C),
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 54),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: const Text(
+                                  "Sign In",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // --- OPTION A: THE "READER APP" FOOTER ---
+                  Text(
+                    "Don't have an account?",
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _launchWebsite,
+                    child: const Text(
+                      "Set up your workspace at klockerapp.com",
+                      style: TextStyle(
+                        color: Color(0xFF00A36C),
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  Row(
-                    children: [
-                      _toggleTab(
-                        "Sign In",
-                        !isSignUp,
-                        () => setState(() => isSignUp = false),
-                      ),
-                      _toggleTab(
-                        "Sign Up",
-                        isSignUp,
-                        () => setState(() => isSignUp = true),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
-            const SizedBox(height: 40),
-
-            // --- THE FORM AREA ---
-            Container(
-              width: double.infinity,
-              constraints: BoxConstraints(
-                minHeight: MediaQuery.of(context).size.height * 0.6,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? theme.colorScheme.surface
-                    : Colors.white, // Pure white in Light Mode
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(40),
-                  topRight: Radius.circular(40),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: isDark
-                        ? Colors.black54
-                        : Colors.black.withOpacity(0.05),
-                    blurRadius: 20,
-                    offset: const Offset(0, -10),
-                  ),
-                ],
-              ),
-              child: isSignUp
-                  ? const RoleSelectionWidget()
-                  : const SignInForm(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _toggleTab(String label, bool isActive, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isActive
-                  ? Colors.white
-                  : (Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white70
-                        : Colors.black),
-              fontWeight: FontWeight.bold,
-            ),
           ),
         ),
       ),
-    );
-  }
-}
-
-// --- SUB-WIDGET: ROLE SELECTION ---
-class RoleSelectionWidget extends StatefulWidget {
-  const RoleSelectionWidget({super.key});
-
-  @override
-  State<RoleSelectionWidget> createState() => _RoleSelectionWidgetState();
-}
-
-class _RoleSelectionWidgetState extends State<RoleSelectionWidget> {
-  String? selectedRole;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Get Started as...",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 20),
-        _roleButton(
-          "Administrator",
-          Icons.admin_panel_settings_rounded,
-          'admin',
-        ),
-        const SizedBox(height: 16),
-        _roleButton("Employee", Icons.badge_rounded, 'employee'),
-        if (selectedRole != null) ...[
-          const SizedBox(height: 30),
-          selectedRole == 'admin'
-              ? const AdminSignUpFields()
-              : const EmployeeSignUpFields(),
-        ],
-      ],
-    );
-  }
-
-  Widget _roleButton(String title, IconData icon, String role) {
-    final theme = Theme.of(context);
-    bool isSelected = selectedRole == role;
-    return GestureDetector(
-      onTap: () => setState(() => selectedRole = role),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? theme.colorScheme.primary
-              : (theme.brightness == Brightness.dark
-                    ? Colors.grey[900]
-                    : Colors.white),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: isSelected ? Colors.transparent : Colors.grey[300]!,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : theme.colorScheme.primary,
-            ),
-            const SizedBox(width: 15),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : theme.colorScheme.onSurface,
-              ),
-            ),
-            const Spacer(),
-            if (isSelected) const Icon(Icons.check_circle, color: Colors.white),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- ADMIN SIGN UP FORM ---
-class AdminSignUpFields extends StatefulWidget {
-  const AdminSignUpFields({super.key});
-  @override
-  State<AdminSignUpFields> createState() => _AdminSignUpFieldsState();
-}
-
-class _AdminSignUpFieldsState extends State<AdminSignUpFields> {
-  final emailCont = TextEditingController();
-  final passCont = TextEditingController();
-  final phoneCont = TextEditingController();
-  final nameCont = TextEditingController();
-  final bizCont = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _inputField("Business Name", bizCont),
-        const SizedBox(height: 10),
-        _inputField("Full Name", nameCont),
-        const SizedBox(height: 10),
-        _inputField("Phone Number", phoneCont, isNumber: true),
-        const SizedBox(height: 10),
-        _inputField("Email", emailCont),
-        const SizedBox(height: 10),
-        _inputField("Password", passCont, isPass: true),
-        const SizedBox(height: 30),
-        _pillButton("Sign Up", () async {
-          try {
-            await SupabaseService().signUpAdmin(
-              email: emailCont.text.trim(),
-              password: passCont.text.trim(),
-              fullName: nameCont.text.trim(),
-              businessName: bizCont.text.trim(),
-              phoneNumber: int.parse(phoneCont.text.trim()),
-            );
-          } catch (e) {
-            print("Sign up error: $e");
-          }
-        }),
-      ],
-    );
-  }
-
-  Widget _inputField(
-    String label,
-    TextEditingController cont, {
-    bool isPass = false,
-    bool isNumber = false,
-  }) {
-    return TextFormField(
-      controller: cont,
-      obscureText: isPass,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(labelText: label),
-    );
-  }
-
-  Widget _pillButton(String label, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        minimumSize: const Size(double.infinity, 54),
-        shape: const StadiumBorder(),
-      ),
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-}
-
-// --- EMPLOYEE SIGN UP FORM ---
-class EmployeeSignUpFields extends StatefulWidget {
-  const EmployeeSignUpFields({super.key});
-  @override
-  State<EmployeeSignUpFields> createState() => _EmployeeSignUpFieldsState();
-}
-
-class _EmployeeSignUpFieldsState extends State<EmployeeSignUpFields> {
-  final _codeController = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextField(
-          controller: _codeController,
-          decoration: const InputDecoration(
-            labelText: "Enter Company Code",
-            prefixIcon: Icon(Icons.business),
-          ),
-        ),
-        const SizedBox(height: 30),
-        _isLoading
-            ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: () async {
-                  setState(() => _isLoading = true);
-                  final companyData = await SupabaseService().verifyCompanyCode(
-                    _codeController.text.trim(),
-                  );
-                  setState(() => _isLoading = false);
-                  if (companyData != null && mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EmployeeWelcomeScreen(
-                          tenantId: companyData['id'],
-                          companyName: companyData['name'],
-                        ),
-                      ),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 54),
-                  shape: const StadiumBorder(),
-                ),
-                child: const Text(
-                  "Verify Code",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-      ],
-    );
-  }
-}
-
-// --- SIGN IN FORM ---
-class SignInForm extends StatefulWidget {
-  const SignInForm({super.key});
-  @override
-  State<SignInForm> createState() => _SignInFormState();
-}
-
-class _SignInFormState extends State<SignInForm> {
-  final emailCont = TextEditingController();
-  final passCont = TextEditingController();
-  bool _isLoading = false;
-
-  void _handleSignIn() async {
-    if (emailCont.text.isEmpty || passCont.text.isEmpty) return;
-    setState(() => _isLoading = true);
-    try {
-      final userData = await SupabaseService().signInUser(
-        emailCont.text.trim(),
-        passCont.text.trim(),
-      );
-      final userRole role = userRole.fromString(userData['role']);
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => BottomNav(role: role)),
-        );
-      }
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextFormField(
-          controller: emailCont,
-          decoration: const InputDecoration(labelText: "Email"),
-        ),
-        const SizedBox(height: 30),
-        TextFormField(
-          controller: passCont,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: "Password"),
-        ),
-        const SizedBox(height: 40),
-        _isLoading
-            ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: _handleSignIn,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 54),
-                  shape: const StadiumBorder(),
-                ),
-                child: const Text(
-                  "Sign In",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-      ],
     );
   }
 }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart'; // 🚀 ADDED
+import 'package:klockerapp/providers/user_provider.dart'; // 🚀 ADDED
+import '../../../supabase/repo/supabase_service.dart';
 import 'components/expense_detail_screen.dart';
+import 'components/add_expense_screen.dart'; // Ensure you create this file!
 
-// 1. Simple Data Model for an Expense (Optional, but good practice)
 class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({super.key});
 
@@ -11,161 +14,145 @@ class ExpenseScreen extends StatefulWidget {
 }
 
 class _ExpenseScreenState extends State<ExpenseScreen> {
-  // Sample Data List based on the web UI and typical expenses
-  final List<Map<String, String>> _mockExpenses = const [
-    {
-      "payee": "Jessica",
-      "amount": "49,700.00",
-      "category": "Cash",
-      "date": "Sep 3, 2025",
-    },
-    {
-      "payee": "Gas Station",
-      "amount": "65.50",
-      "category": "Fuel",
-      "date": "Sep 5, 2025",
-    },
-    {
-      "payee": "ACME Suppliers",
-      "amount": "1,250.00",
-      "category": "Inventory",
-      "date": "Sep 1, 2025",
-    },
-    {
-      "payee": "Jane Doe",
-      "amount": "450.00",
-      "category": "Office Supplies",
-      "date": "Aug 29, 2025",
-    },
-  ];
+  List<Map<String, dynamic>> _expenses = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchExpenses();
+  }
+
+  Future<void> _fetchExpenses() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await SupabaseService().getExpenses();
+      if (mounted)
+        setState(() {
+          _expenses = data;
+          _isLoading = false;
+        });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 Grabs the live currency symbol from settings!
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Expenses')),
-
       body: Column(
         children: [
-          // 1. Search Bar Area
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(16.0),
             child: SearchBar(
-              hintText: "Search by Payee or Category...",
-              trailing: [
-                IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.filter_list),
-                ),
-              ],
+              elevation: WidgetStateProperty.all(0),
+              backgroundColor: WidgetStateProperty.all(Colors.transparent),
+              hintText: "Search Expenses...",
+              trailing: [const Icon(Icons.search, color: Colors.grey)],
             ),
           ),
-
-          // 2. The Scrollable List of Expense Cards
           Expanded(
-            child: ListView.builder(
-              itemCount: _mockExpenses.length,
-              itemBuilder: (context, index) {
-                final expense = _mockExpenses[index];
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.red),
+                  )
+                : _expenses.isEmpty
+                ? const Center(child: Text("No expenses recorded yet."))
+                : ListView.builder(
+                    itemCount: _expenses.length,
+                    itemBuilder: (context, index) {
+                      final expense = _expenses[index];
 
-                return GestureDetector(
-                  onTap: () {
-                    // Placeholder for navigation to Expense Detail Screen
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ExpenseDetailScreen(
-                          // Pass the current item's data map to the detail screen
-                          expenseDetails: expense,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8.0,
-                      vertical: 4.0,
-                    ),
-                    child: Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Left Side: Payee, Date, Category
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    expense['payee']!,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    expense['date']!,
-                                    style: TextStyle(color: Colors.grey[600]),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  // Chip for Category visualization
-                                  Chip(
-                                    label: Text(expense['category']!),
-                                    padding: EdgeInsets.zero,
-                                    labelStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
+                      // Format date nicely
+                      String dateStr =
+                          expense['expense_date']?.toString() ?? '';
+                      try {
+                        if (dateStr.isNotEmpty) {
+                          dateStr = DateFormat(
+                            'MMM dd, yyyy',
+                          ).format(DateTime.parse(dateStr));
+                        }
+                      } catch (_) {}
 
-                            // Right Side: Amount
-                            Text(
-                              "\$${expense['amount']!}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 20,
-                                color: Colors.red, // Expense color
-                              ),
-                            ),
-                          ],
+                      final amountStr = expense['amount']?.toString() ?? '0.00';
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 6.0,
                         ),
-                      ),
-                    ),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListTile(
+                          onTap: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ExpenseDetailScreen(
+                                  expenseDetails: expense,
+                                ),
+                              ),
+                            );
+                            if (result == true) _fetchExpenses();
+                          },
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.red.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.receipt_long,
+                              color: Colors.red,
+                            ),
+                          ),
+                          title: Text(
+                            expense['payee'] ?? 'Unknown Cost',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            dateStr,
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          trailing: Text(
+                            // 🚀 CHANGED: Using dynamic currency
+                            "-$currency$amountStr",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
-
-      // 3. Floating Action Button (FAB)
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Logic for navigating to the Add New Expense form
-          Navigator.push(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final result = await Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => ExpenseDetailScreen(
-                expenseDetails: {
-                  "account": "-",
-                  "payee": "Jessica",
-                  "amount": "49,700.00",
-                  "category": "Cash",
-                  "ref": "-",
-                  "payment": "Bank Transfer",
-                  "date": "Sep 3, 2025",
-                },
-              ),
-            ),
+            MaterialPageRoute(builder: (context) => const AddExpenseScreen()),
           );
+          if (result == true) _fetchExpenses();
         },
-        child: const Icon(Icons.add),
+        backgroundColor: Colors.red,
+        foregroundColor: Colors.white,
+        label: const Text(
+          "Add Expense",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        icon: const Icon(Icons.add),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

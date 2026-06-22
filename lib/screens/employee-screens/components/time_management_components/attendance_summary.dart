@@ -1,12 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:klockerapp/utils/custom_theme/text_theme.dart';
-import 'utils/report_summary.dart';
 
 class AttendanceSummary extends StatelessWidget {
-  const AttendanceSummary({super.key});
+  final List<Map<String, dynamic>> records;
+
+  const AttendanceSummary({super.key, required this.records});
+
+  // 🚀 THE FIX: Helper method to count unique employees, not total shifts
+  int _countUnique(String status) {
+    return records
+        .where((r) => r['status'] == status)
+        // Try to use a unique ID like profile_id or employee_id. Fall back to name.
+        .map((r) => r['profile_id'] ?? r['employee_id'] ?? r['name'])
+        .toSet() // This is the magic part: it removes duplicate employees
+        .length;
+  }
 
   @override
   Widget build(BuildContext context) {
+    // We now use the smart counter to get unique headcounts
+    final presentCount = _countUnique('Present');
+    final lateCount = _countUnique('Late');
+    final absentCount = _countUnique('Absent');
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -14,11 +29,10 @@ class AttendanceSummary extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Using Expanded to ensure they take up equal space
             Expanded(
               child: _buildSummaryCard(
                 "Present",
-                "20",
+                presentCount.toString(),
                 Colors.green,
                 Icons.check_circle_outline,
               ),
@@ -27,7 +41,7 @@ class AttendanceSummary extends StatelessWidget {
             Expanded(
               child: _buildSummaryCard(
                 "Late",
-                "5",
+                lateCount.toString(),
                 Colors.orange,
                 Icons.history_toggle_off,
               ),
@@ -36,7 +50,7 @@ class AttendanceSummary extends StatelessWidget {
             Expanded(
               child: _buildSummaryCard(
                 "Absent",
-                "0",
+                absentCount.toString(),
                 Colors.red,
                 Icons.do_not_disturb_on_outlined,
               ),
