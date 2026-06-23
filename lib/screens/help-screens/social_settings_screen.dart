@@ -28,7 +28,6 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
   }
 
   // 🚀 Check if they are already signed in when the screen opens
-  // 🚀 Check if they are already signed in when the screen opens
   Future<void> _checkConnections() async {
     try {
       // 1. Ask the service to check the browser cookies silently
@@ -152,10 +151,11 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
   }
 
   // --- REUSABLE UI BUILDER ---
+  // 🚀 UPGRADED: icon parameter changed to FaIconData to handle FontAwesome v11
   Widget _buildIntegrationCard({
     required String title,
     required String subtitle,
-    required IconData icon,
+    required FaIconData icon,
     required Color iconColor,
     required bool isConnected,
     required bool isDark,
