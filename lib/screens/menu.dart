@@ -45,183 +45,212 @@ class Menu extends StatelessWidget {
     final userName = userProvider.fullName ?? 'Loading...';
     final bool isWeb = MediaQuery.of(context).size.width > 800;
 
-    // 🚀 1. DYNAMIC HRM LIST
+    // 🚀 1. PARSE THE SUBSCRIPTION TIER
+    // We convert the string to a number so it's easy to say "If Tier >= 3"
+    final currentTierStr =
+        userProvider.subscriptionTier?.toLowerCase() ?? 'lite';
+    int tierLevel = 1; // Default to Lite
+    if (currentTierStr == 'basic') tierLevel = 2;
+    if (currentTierStr == 'standard') tierLevel = 3;
+    if (currentTierStr == 'premium') tierLevel = 4;
+
+    // 🚀 2. DYNAMIC HRM LIST
     List<MenuExpansionOBJ> hrmList = [];
-    if (userProvider.can('manage_awards')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Awards',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AwardsScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_offboarding')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Termination',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const TerminationScreen()),
-          ),
-        ),
-      );
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Resignation',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ResignationScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_transfers')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Transfer',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const TransferScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_warnings')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Warning',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const WarningScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_announcements')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Announcements',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AnnouncementsScreen(),
+
+    // HR Actions & Compliance (BASIC TIER AND UP)
+    if (tierLevel >= 2) {
+      if (userProvider.can('manage_awards')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Awards',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AwardsScreen()),
             ),
           ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_promotions')) {
-      hrmList.add(
-        MenuExpansionOBJ(
-          title: 'Promotion',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PromotionScreen()),
+        );
+      }
+      if (userProvider.can('manage_offboarding')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Termination',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const TerminationScreen(),
+              ),
+            ),
           ),
-        ),
-      );
+        );
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Resignation',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ResignationScreen(),
+              ),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_transfers')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Transfer',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const TransferScreen()),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_warnings')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Warning',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const WarningScreen()),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_announcements')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Announcements',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AnnouncementsScreen(),
+              ),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_promotions')) {
+        hrmList.add(
+          MenuExpansionOBJ(
+            title: 'Promotion',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PromotionScreen()),
+            ),
+          ),
+        );
+      }
     }
 
-    // 🚀 2. DYNAMIC FINANCE LIST
+    // 🚀 3. DYNAMIC FINANCE LIST
     List<MenuExpansionOBJ> financeList = [];
-    if (userProvider.can('view_financials') ||
-        userProvider.can('manage_salary_configs')) {
-      financeList.add(
-        MenuExpansionOBJ(
-          title: "Salary & Payroll",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const SalaryScreen()),
-          ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: "Payslips",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PayslipScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_expenses')) {
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Employee Expenses',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const EmployeeExpenseScreen(),
+
+    // Payroll Automation (BASIC TIER AND UP)
+    if (tierLevel >= 2) {
+      if (userProvider.can('view_financials') ||
+          userProvider.can('manage_salary_configs')) {
+        financeList.add(
+          MenuExpansionOBJ(
+            title: "Salary & Payroll",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SalaryScreen()),
             ),
           ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Expense',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ExpenseScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_ledgers')) {
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Accounts List',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AccountsListScreen()),
-          ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Payee',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PayeeScreen()),
-          ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Payers',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PayersScreen()),
-          ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Deposit',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const DepositScreen()),
-          ),
-        ),
-      );
-      financeList.add(
-        MenuExpansionOBJ(
-          title: 'Transfer Balance',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const ManageTransferScreen(),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: "Payslips",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PayslipScreen()),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    // 🚀 3. DYNAMIC COMPANY LIST
+    // Finance Management (PREMIUM TIER ONLY)
+    if (tierLevel >= 4) {
+      if (userProvider.can('manage_expenses')) {
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Employee Expenses',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const EmployeeExpenseScreen(),
+              ),
+            ),
+          ),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Expense',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ExpenseScreen()),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_ledgers')) {
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Accounts List',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AccountsListScreen(),
+              ),
+            ),
+          ),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Payee',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PayeeScreen()),
+            ),
+          ),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Payers',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PayersScreen()),
+            ),
+          ),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Deposit',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DepositScreen()),
+            ),
+          ),
+        );
+        financeList.add(
+          MenuExpansionOBJ(
+            title: 'Transfer Balance',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ManageTransferScreen(),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    // 🚀 4. DYNAMIC COMPANY LIST
     List<MenuExpansionOBJ> companyList = [];
+
+    // Core setup, available to everyone who has permission
     if (userProvider.can('manage_branches') ||
         userProvider.can('manage_departments')) {
       companyList.add(
@@ -234,63 +263,73 @@ class Menu extends StatelessWidget {
         ),
       );
     }
-    if (userProvider.can('manage_performance')) {
-      companyList.add(
-        MenuExpansionOBJ(
-          title: "Performance",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PerformanceScreen()),
-          ),
-        ),
-      );
-      companyList.add(
-        MenuExpansionOBJ(
-          title: "Appraisal",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AppraisalScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_tickets') ||
-        userProvider.can('view_company_tickets')) {
-      companyList.add(
-        MenuExpansionOBJ(
-          title: "Ticketing",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const TicketingScreen()),
-          ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_training')) {
-      companyList.add(
-        MenuExpansionOBJ(
-          title: "Training Designator",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const TrainingDesignatorScreen(),
+
+    // Performance & Training (STANDARD TIER AND UP)
+    if (tierLevel >= 3) {
+      if (userProvider.can('manage_performance')) {
+        companyList.add(
+          MenuExpansionOBJ(
+            title: "Performance",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const PerformanceScreen(),
+              ),
             ),
           ),
-        ),
-      );
-    }
-    if (userProvider.can('manage_assets')) {
-      companyList.add(
-        MenuExpansionOBJ(
-          title: "Asset Management",
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AssetManagementScreen(),
+        );
+        companyList.add(
+          MenuExpansionOBJ(
+            title: "Appraisal",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AppraisalScreen()),
             ),
           ),
-        ),
-      );
+        );
+      }
+      if (userProvider.can('manage_tickets') ||
+          userProvider.can('view_company_tickets')) {
+        companyList.add(
+          MenuExpansionOBJ(
+            title: "Ticketing",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const TicketingScreen()),
+            ),
+          ),
+        );
+      }
+      if (userProvider.can('manage_training')) {
+        companyList.add(
+          MenuExpansionOBJ(
+            title: "Training Designator",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const TrainingDesignatorScreen(),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    // Asset Management (PREMIUM TIER ONLY)
+    if (tierLevel >= 4) {
+      if (userProvider.can('manage_assets')) {
+        companyList.add(
+          MenuExpansionOBJ(
+            title: "Asset Management",
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AssetManagementScreen(),
+              ),
+            ),
+          ),
+        );
+      }
     }
 
     Widget menuContentList = ListView(
