@@ -9,9 +9,12 @@ import 'models/app_enums.dart';
 import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/google_calendar_service.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:klockerapp/screens/pending_approval_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+// 🚀 Required for detecting platform and launching URLs
+import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,22 +48,15 @@ class MyApp extends StatelessWidget {
       theme: KlockerappTheme.lightTheme,
       darkTheme: KlockerappTheme.darkTheme,
 
-      // 🚀 1. THE NEW GLOBAL GATEKEEPER
+      // 🚀 THE UPGRADED OS-BASED GATEKEEPER
       builder: (context, child) {
-        // If we are on the web, check the screen size
-        if (kIsWeb) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              // If the screen is mobile-sized, block everything!
-              if (constraints.maxWidth < 600) {
-                return const MobileWebBlockerScreen();
-              }
-              // If it's a big screen, show the app normally
-              return child!;
-            },
-          );
+        // If they are on the Web AND using a Mobile OS (iOS/Android)...
+        if (kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.iOS ||
+                defaultTargetPlatform == TargetPlatform.android)) {
+          return const MobileAppWall(); // 🛑 Throw up the mobile wall!
         }
-        // If they downloaded the actual App Store/Play Store app, let them in.
+        // Otherwise, let them proceed normally
         return child!;
       },
 
@@ -69,20 +65,6 @@ class MyApp extends StatelessWidget {
           : const LoginScreen(),
     );
   }
-}
-
-// 🚀 This function measures the screen before drawing the app
-Widget _buildWebResponsiveGate(Widget mainContent) {
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      // If screen is smaller than 600 pixels wide (standard phone size)
-      if (constraints.maxWidth < 600) {
-        return const MobileWebBlockerScreen();
-      }
-      // If it's a tablet or laptop, let them in!
-      return mainContent;
-    },
-  );
 }
 
 // Changed to StatefulWidget to safely load data into the Provider
@@ -97,7 +79,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _isLoading = true;
   userRole? _role;
-  String? _approvalStatus; // 🚀 NEW: Track approval status
+  String? _approvalStatus;
 
   @override
   void initState() {
@@ -115,7 +97,7 @@ class _AuthGateState extends State<AuthGate> {
       if (mounted) {
         context.read<UserProvider>().setUserProfile(data);
 
-        // 🚀 THE NEW INJECTION: Fetch and set permissions silently on app start
+        // Fetch and set permissions silently on app start
         final String legacyRole = data['role'] ?? 'employee';
         final String? customRoleId = data['custom_role_id'];
 
@@ -147,7 +129,7 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    // 🚀 NEW: The Security Locks
+    // The Security Locks
     if (_approvalStatus == 'pending') {
       return const PendingApprovalScreen();
     }
@@ -169,94 +151,133 @@ class _AuthGateState extends State<AuthGate> {
   }
 }
 
-class MobileWebBlockerScreen extends StatelessWidget {
-  const MobileWebBlockerScreen({super.key});
+// ==========================================
+// 🛑 MOBILE APP WALL
+// ==========================================
+class MobileAppWall extends StatelessWidget {
+  const MobileAppWall({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4BAE4F),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Center(
+                  child: Text(
+                    "K",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                "KLOCKER is better in the app.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "To ensure the best experience with time-tracking, offline sync, and instant notifications, mobile browser access is disabled. Please download the official Klocker app.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.black54,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              // 🚀 Replace these URLs with your actual App Store / Play Store links
+              _storeButton(
+                Icons.apple,
+                "Download on the",
+                "App Store",
+                () => launchUrl(Uri.parse('https://apps.apple.com')),
+              ),
+              const SizedBox(height: 16),
+              _storeButton(
+                Icons.shop, // Or FontAwesomeIcons.googlePlay
+                "GET IT ON",
+                "Google Play",
+                () => launchUrl(Uri.parse('https://play.google.com')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _storeButton(
+    IconData icon,
+    String topText,
+    String bottomText,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 240,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111827),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 8,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 36),
+            const SizedBox(width: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon or Logo
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00A36C).withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.phone_android,
-                    size: 64,
-                    color: Color(0xFF00A36C),
+                Text(
+                  topText,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 10,
+                    letterSpacing: 0.5,
                   ),
                 ),
-                const SizedBox(height: 32),
-
-                // Text
-                const Text(
-                  "Get the Mobile App",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  "The web dashboard is optimized for tablets and desktop computers. For the best experience on your phone, please download the official KlockerApp.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 48),
-
-                // Download Buttons (You can link these to your actual store URLs later)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: Add App Store Link via url_launcher
-                    },
-                    icon: const Icon(Icons.apple),
-                    label: const Text("Download for iOS"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: Add Google Play Link via url_launcher
-                    },
-                    icon: const Icon(Icons.shop), // Generic play store icon
-                    label: const Text("Download for Android"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: const Color(0xFF00A36C),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                Text(
+                  bottomText,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
