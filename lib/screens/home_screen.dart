@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:klockerapp/components/notifications_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:googleapis/calendar/v3.dart' as calendar; // 🚀 NEW: Google API
@@ -250,28 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 650),
                               child: SearchBar(
-                                elevation: WidgetStateProperty.all(0),
-                                backgroundColor: WidgetStateProperty.all(
-                                  isDark ? Colors.grey[900] : Colors.white,
-                                ),
-                                padding: WidgetStateProperty.all(
-                                  const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                hintText: 'Search features, employees...',
-                                textStyle: WidgetStateProperty.all(
-                                  const TextStyle(fontSize: 16),
-                                ),
-                                leading: const Padding(
-                                  padding: EdgeInsets.only(right: 8.0),
-                                  child: Icon(
-                                    Icons.search,
-                                    color: Colors.grey,
-                                    size: 28,
-                                  ),
-                                ),
+                                // ... (Keep your existing SearchBar code here)
                               ),
                             ),
                           ),
@@ -280,7 +260,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           flex: 1,
                           child: Align(
                             alignment: Alignment.centerRight,
-                            child: _buildAvatar(context, avatarUrl, isDark),
+                            // 🚀 NEW: A Row to hold BOTH the Bell and the Avatar
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildNotificationBell(context),
+                                const SizedBox(width: 16),
+                                _buildAvatar(context, avatarUrl, isDark),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -312,7 +300,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ],
                             ),
-                            _buildAvatar(context, avatarUrl, isDark),
+                            // 🚀 NEW: A Row to hold BOTH the Bell and the Avatar for Mobile!
+                            Row(
+                              children: [
+                                _buildNotificationBell(context),
+                                const SizedBox(width: 12),
+                                _buildAvatar(context, avatarUrl, isDark),
+                              ],
+                            ),
                           ],
                         ),
                         const SizedBox(height: 24),
@@ -772,6 +767,72 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildNotificationBell(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client
+          .from('notifications')
+          .stream(primaryKey: ['id'])
+          .eq('profile_id', Supabase.instance.client.auth.currentUser!.id)
+          .order('created_at', ascending: false),
+      builder: (context, snapshot) {
+        int unreadCount = 0;
+        if (snapshot.hasData) {
+          unreadCount = snapshot.data!
+              .where((n) => n['is_read'] == false)
+              .length;
+        }
+
+        return Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.notifications_none_rounded,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : Colors.black87,
+              ),
+              onPressed: () {
+                // TODO: Make sure you import NotificationsScreen at the top!
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationsScreen(),
+                  ),
+                );
+              },
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).cardColor,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    unreadCount > 9 ? '9+' : '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

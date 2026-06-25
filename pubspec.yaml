@@ -55,6 +55,7 @@ dependencies:
   printing: ^5.14.3
   flutter_dotenv: ^5.1.0
   extension_google_sign_in_as_googleapis_auth: ^2.0.13
+  timeago: ^3.7.1
 
 dev_dependencies:
   flutter_test:

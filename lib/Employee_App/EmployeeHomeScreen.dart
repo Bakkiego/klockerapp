@@ -5,9 +5,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart'; // <-- New import for date formatting
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 🚀 Needed for the bell's realtime stream
 
-// 🚀 IMPORT PROFILE SETTINGS SCREEN (Verify this path matches your project!)
-import 'package:klockerapp/screens/profile_settings_screen.dart';
+// 🚀 IMPORT PROFILE SETTINGS & NOTIFICATIONS (Verify paths match your project!)
+import 'package:klockerapp/screens/help-screens/profile_settings_screen.dart';
+import 'package:klockerapp/components/notifications_screen.dart'; // 🚀 Added Notifications import
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -22,7 +24,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   Map<String, dynamic>? _activeShift;
   bool _hasShiftToday = false;
   String _assignedBranchName = "Loading...";
-  String _nextShiftDisplay = "Loading..."; // <-- New state variable
+  String _nextShiftDisplay = "Loading...";
 
   @override
   void initState() {
@@ -45,7 +47,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       String formattedNextShift = "No scheduled shifts";
       DateTime now = DateTime.now();
       DateTime today = DateTime(now.year, now.month, now.day);
-      bool foundShiftToday = false; // The exact current time
+      bool foundShiftToday = false;
 
       for (var s in upcomingShifts) {
         final String dateStr = s['shift_date'];
@@ -384,37 +386,43 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             ],
           ),
 
-          // 🚀 THE DYNAMIC AVATAR
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProfileSettingsScreen(),
+          // 🚀 NEW: Wrap the Avatar in a Row and add the Bell!
+          Row(
+            children: [
+              _buildNotificationBell(context),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileSettingsScreen(),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00A36C).withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 25,
+                    backgroundColor: isDark ? Colors.grey[800] : Colors.white,
+                    backgroundImage: avatarUrl != null
+                        ? NetworkImage(avatarUrl)
+                        : null,
+                    child: avatarUrl == null
+                        ? const Icon(
+                            Icons.person,
+                            color: Color(0xFF00A36C),
+                            size: 25,
+                          )
+                        : null,
+                  ),
                 ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: const Color(0xFF00A36C).withOpacity(0.2),
-                shape: BoxShape.circle,
               ),
-              child: CircleAvatar(
-                radius: 25,
-                backgroundColor: isDark ? Colors.grey[800] : Colors.white,
-                backgroundImage: avatarUrl != null
-                    ? NetworkImage(avatarUrl)
-                    : null,
-                child: avatarUrl == null
-                    ? const Icon(
-                        Icons.person,
-                        color: Color(0xFF00A36C),
-                        size: 25,
-                      )
-                    : null,
-              ),
-            ),
+            ],
           ),
         ],
       ),
@@ -493,6 +501,72 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // 🚀 NEW: The Real-Time Notification Bell Function
+  Widget _buildNotificationBell(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client
+          .from('notifications')
+          .stream(primaryKey: ['id'])
+          .eq('profile_id', Supabase.instance.client.auth.currentUser!.id)
+          .order('created_at', ascending: false),
+      builder: (context, snapshot) {
+        int unreadCount = 0;
+        if (snapshot.hasData) {
+          unreadCount = snapshot.data!
+              .where((n) => n['is_read'] == false)
+              .length;
+        }
+
+        return Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.notifications_none_rounded,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : Colors.black87,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationsScreen(),
+                  ),
+                );
+              },
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).cardColor,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    unreadCount > 9 ? '9+' : '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

@@ -12,6 +12,8 @@ import '../Employee_App/employee_menu.dart';
 import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 
+import 'notifications_screen.dart';
+
 class BottomNav extends StatefulWidget {
   final userRole role;
 
@@ -85,6 +87,7 @@ class _BottomNavState extends State<BottomNav> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 🚀 PERMANENT SIDEBAR COLUMN
+              // 🚀 PERMANENT SIDEBAR COLUMN
               Container(
                 width: 280, // Clean, optimized sidebar width
                 decoration: BoxDecoration(
@@ -98,14 +101,49 @@ class _BottomNavState extends State<BottomNav> {
                 ),
                 child: Column(
                   children: [
+                    // ==========================================
+                    // 🚀 NEW: KLOCKER HEADER & BELL ROW
+                    // ==========================================
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        top: 16,
+                        left: 24,
+                        right: 16,
+                        bottom: 8,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "KLOCKER",
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          _buildNotificationBell(
+                            context,
+                          ), // <-- The Bell is placed here!
+                        ],
+                      ),
+                    ),
+
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: Divider(height: 20),
+                    ),
+                    // ==========================================
+
                     // Unified Main Top Navigation Rows
                     Padding(
                       padding: const EdgeInsets.only(
-                        top: 24,
+                        top: 8,
                         left: 16,
                         right: 16,
                         bottom: 8,
                       ),
+                      // ... (Your Home, Inbox, Events tabs continue below)
                       child: Column(
                         children: [
                           _buildWebSidebarTab(
@@ -245,6 +283,73 @@ class _BottomNavState extends State<BottomNav> {
           ],
         ),
       ),
+    );
+  }
+
+  // 🚀 NEW: The Real-Time Notification Bell
+  Widget _buildNotificationBell(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client
+          .from('notifications')
+          .stream(primaryKey: ['id'])
+          .eq('profile_id', Supabase.instance.client.auth.currentUser!.id)
+          .order('created_at', ascending: false),
+      builder: (context, snapshot) {
+        int unreadCount = 0;
+        if (snapshot.hasData) {
+          unreadCount = snapshot.data!
+              .where((n) => n['is_read'] == false)
+              .length;
+        }
+
+        return Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.notifications_none_rounded,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : Colors.black87,
+              ),
+              onPressed: () {
+                // TODO: Make sure you import NotificationsScreen at the top!
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationsScreen(),
+                  ),
+                );
+              },
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).cardColor,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    unreadCount > 9 ? '9+' : '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

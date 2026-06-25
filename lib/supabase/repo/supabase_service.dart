@@ -3565,4 +3565,68 @@ class SupabaseService {
     // automatically deletes all its linked permissions!
     await _supabase.from('tenant_roles').delete().eq('id', roleId);
   }
+
+  // 3. Update an Appraisal (Manager saves score and completes)
+  Future<void> updateAppraisal({
+    required String appraisalId,
+    required double score,
+    required String comments,
+    required String status,
+  }) async {
+    await _supabase
+        .from('appraisals')
+        .update({'score': score, 'comments': comments, 'status': status})
+        .eq('id', appraisalId);
+  }
+
+  // ==========================================
+  // --- IN-APP NOTIFICATIONS ---
+  // ==========================================
+
+  // 1. Fetch my notifications
+  Future<List<Map<String, dynamic>>> getMyNotifications() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final response = await _supabase
+        .from('notifications')
+        .select('*')
+        .eq('profile_id', user.id)
+        .order('created_at', ascending: false)
+        .limit(50); // Only keep the 50 most recent
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  // 2. Mark a notification as read
+  Future<void> markNotificationAsRead(String notificationId) async {
+    await _supabase
+        .from('notifications')
+        .update({'is_read': true})
+        .eq('id', notificationId);
+  }
+
+  // 3. The Helper to SEND a notification from anywhere in your code
+  Future<void> sendNotification({
+    required String recipientId,
+    required String title,
+    required String message,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    await _supabase.from('notifications').insert({
+      'tenant_id': profile['tenant_id'],
+      'profile_id': recipientId, // Who receives it
+      'title': title,
+      'message': message,
+      'is_read': false,
+    });
+  }
 }

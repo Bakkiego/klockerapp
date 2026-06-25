@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../supabase/repo/supabase_service.dart';
-import 'components/add_appraisal_screen.dart'; // Ensure you create this next!
+import 'components/add_appraisal_screen.dart';
+import 'components/appraisal_detail_screen.dart'; // Ensure you create this next!
 
 class AppraisalScreen extends StatefulWidget {
   const AppraisalScreen({super.key});
@@ -59,7 +60,9 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
                 padding: const EdgeInsets.all(20),
                 itemCount: _appraisals.length,
                 itemBuilder: (context, index) {
-                  final appraisal = _appraisals[index];
+                  // 🚀 Cast it explicitly to Map<String, dynamic>
+                  final Map<String, dynamic> appraisal = _appraisals[index];
+
                   // Safely extract joined employee name
                   final employeeName =
                       appraisal['employee']?['full_name'] ?? 'Unknown Employee';
@@ -69,6 +72,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
                     employeeName,
                     appraisal['review_period'] ?? 'Review',
                     appraisal['status'] ?? 'Draft',
+                    appraisal, // 🚀 NEW: We must pass the raw appraisal object down into the card!
                   );
                 },
               ),
@@ -96,6 +100,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     String employee,
     String reviewType,
     String status,
+    Map<String, dynamic> appraisal, // 🚀 NEW PARAMETER HERE
   ) {
     final theme = Theme.of(context);
 
@@ -138,8 +143,18 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
           ],
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: () {
-          // Future enhancement: Open a detailed screen to score and transition the status!
+        onTap: () async {
+          // 🚀 Now it has the object it needs to navigate!
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AppraisalDetailScreen(appraisal: appraisal),
+            ),
+          );
+
+          if (result == true) {
+            _fetchAppraisals(); // Refresh list on return
+          }
         },
       ),
     );
