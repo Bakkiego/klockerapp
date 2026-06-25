@@ -9,6 +9,137 @@ class SupabaseService {
   final _supabase = Supabase.instance.client;
 
   // ==========================================
+  // --- IN-APP NOTIFICATIONS ENGINE ---
+  // ==========================================
+
+  Future<List<Map<String, dynamic>>> getMyNotifications() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final response = await _supabase
+        .from('notifications')
+        .select('*')
+        .eq('profile_id', user.id)
+        .order('created_at', ascending: false)
+        .limit(50); // Only keep the 50 most recent
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> markNotificationAsRead(String notificationId) async {
+    await _supabase
+        .from('notifications')
+        .update({'is_read': true})
+        .eq('id', notificationId);
+  }
+
+  // Helper 1: Send a 1-to-1 notification
+  Future<void> sendNotification({
+    required String recipientId,
+    required String title,
+    required String message,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    await _supabase.from('notifications').insert({
+      'tenant_id': profile['tenant_id'],
+      'profile_id': recipientId, // Who receives it
+      'title': title,
+      'message': message,
+      'is_read': false,
+    });
+  }
+
+  // 🚀 Helper 2: Send a mass notification to ALL active employees in the company
+  Future<void> sendMassNotification({
+    required String title,
+    required String message,
+    String? branchId,
+  }) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await _supabase
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .single();
+      final tenantId = profile['tenant_id'];
+
+      var query = _supabase
+          .from('profiles')
+          .select('id')
+          .eq('tenant_id', tenantId);
+
+      if (branchId != null) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      final employees = await query;
+
+      final List<Map<String, dynamic>> notifications = employees
+          .map(
+            (emp) => {
+              'tenant_id': tenantId,
+              'profile_id': emp['id'],
+              'title': title,
+              'message': message,
+              'is_read': false,
+            },
+          )
+          .toList();
+
+      if (notifications.isNotEmpty) {
+        await _supabase.from('notifications').insert(notifications);
+      }
+    } catch (e) {
+      debugPrint("Mass Notification Error: $e");
+    }
+  }
+
+  // 🚀 Helper 3: Alert the Business Owner directly (for late leaves, deductions, etc.)
+  Future<void> notifyBusinessOwner({
+    required String title,
+    required String message,
+  }) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await _supabase
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .single();
+
+      final tenant = await _supabase
+          .from('tenants')
+          .select('admin_id')
+          .eq('id', profile['tenant_id'])
+          .single();
+
+      // Don't ping the owner about their own actions
+      if (user.id != tenant['admin_id']) {
+        await sendNotification(
+          recipientId: tenant['admin_id'],
+          title: title,
+          message: message,
+        );
+      }
+    } catch (e) {
+      debugPrint("Business Owner Notification Error: $e");
+    }
+  }
+
+  // ==========================================
   // NEW METHODS ADDED FOR ROUTING & AUTH GATE
   // ==========================================
 
@@ -17,7 +148,6 @@ class SupabaseService {
     return userRole.fromString(roleName);
   }
 
-  // 2. Fetch a single profile for the AuthGate in main.dart
   // 2. Fetch a single profile for the AuthGate in main.dart
   Future<Map<String, dynamic>> getUserProfile(String userId) async {
     final response = await _supabase
@@ -350,7 +480,6 @@ class SupabaseService {
   // ==========================================
 
   // 1. Check if the user is currently clocked in
-  // 1. Check if the user is currently clocked in
   Future<Map<String, dynamic>?> getActiveShift() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return null;
@@ -382,7 +511,7 @@ class SupabaseService {
     // 1. Grab their tenant_id
     final profile = await _supabase
         .from('profiles')
-        .select('tenant_id')
+        .select('tenant_id, full_name')
         .eq('id', user.id)
         .single();
 
@@ -401,6 +530,13 @@ class SupabaseService {
       'reason': reason, // <-- Now this will work!
       'status': 'pending', // Lowercase 'pending' to match your DB default
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Admin!
+    await notifyBusinessOwner(
+      title: "New Leave Request",
+      message:
+          "${profile['full_name']} requested $totalDays days of $leaveType.",
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPendingLeaveRequests() async {
@@ -678,6 +814,9 @@ class SupabaseService {
         .update({'status': cleanStatus})
         .eq('id', requestId);
 
+    String? empIdToNotify;
+    String? leaveTypeToNotify;
+
     // 2. Execute ledger adjustments only on a clean approval pass
     if (cleanStatus == 'approved') {
       try {
@@ -700,6 +839,8 @@ class SupabaseService {
 
         final String empId = requestData['profile_id'];
         final String leaveType = requestData['leave_type'];
+        empIdToNotify = empId;
+        leaveTypeToNotify = leaveType;
 
         // 🚨 SUSPECT #1: Is totalDays actually 0?
         final double requestedDays =
@@ -776,6 +917,24 @@ class SupabaseService {
           "Status was approved, but balance update failed. Error: $e",
         );
       }
+    } else {
+      // If rejected, just grab the details so we can notify them
+      final requestData = await _supabase
+          .from('leave_requests')
+          .select('profile_id, leave_type')
+          .eq('id', requestId)
+          .single();
+      empIdToNotify = requestData['profile_id'];
+      leaveTypeToNotify = requestData['leave_type'];
+    }
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee
+    if (empIdToNotify != null) {
+      await sendNotification(
+        recipientId: empIdToNotify,
+        title: "Leave Request Update",
+        message: "Your request for $leaveTypeToNotify has been $cleanStatus.",
+      );
     }
   }
 
@@ -842,6 +1001,19 @@ class SupabaseService {
     // 5. Select the very next shift he is supposed to work
     final currentRoster = availableRosters.first;
 
+    // 🚀 Check if they are late
+    final String startTimeStr =
+        currentRoster['shift_templates']?['start_time'] ?? '00:00:00';
+    final List<String> timeParts = startTimeStr.split(':');
+    final expectedStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      int.tryParse(timeParts[0]) ?? 0,
+      int.tryParse(timeParts[1]) ?? 0,
+    );
+    final isLate = now.isAfter(expectedStart.add(const Duration(minutes: 5)));
+
     // 6. Insert the attendance record
     await _supabase.from('attendance').insert({
       'profile_id': user.id,
@@ -855,6 +1027,20 @@ class SupabaseService {
       'is_verified_by_gps': isVerified,
       'status': 'active',
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Notify Business Owner if Late
+    if (isLate) {
+      final empProfile = await _supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+      await notifyBusinessOwner(
+        title: "Late Clock-In",
+        message:
+            "${empProfile['full_name']} clocked in late for their $startTimeStr shift.",
+      );
+    }
   }
 
   // ==========================================
@@ -1006,6 +1192,17 @@ class SupabaseService {
     } else if (now.isBefore(expectedEnd.subtract(const Duration(minutes: 5)))) {
       // EARLY LEAVE: They clocked out more than 5 minutes before 10:00 PM
       finalStatus = 'early_leave_pending';
+
+      // 🚀 NOTIFICATION TRIGGER: Notify Owner of Early Leave
+      final empProfile = await _supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', response['profile_id'])
+          .single();
+      await notifyBusinessOwner(
+        title: "Early Departure",
+        message: "${empProfile['full_name']} clocked out early.",
+      );
     }
 
     // 4. Update the Database
@@ -1182,6 +1379,15 @@ class SupabaseService {
     // 3. Single database call for all rows
     if (inserts.isNotEmpty) {
       await _supabase.from('rosters').insert(inserts);
+
+      // 🚀 NOTIFICATION TRIGGER: Tell the Employees
+      for (var employeeId in employeeIds) {
+        await sendNotification(
+          recipientId: employeeId,
+          title: "New Shifts Scheduled",
+          message: "You have been assigned new shifts. Check your schedule.",
+        );
+      }
     }
   }
 
@@ -1339,6 +1545,13 @@ class SupabaseService {
       'assigned_by': user.id,
       'award_name': awardName,
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee
+    await sendNotification(
+      recipientId: recipientProfileId,
+      title: "New Award! 🎉",
+      message: "Congratulations! You've been recognized for: $awardName.",
+    );
   }
 
   Future<void> terminateEmployee({
@@ -1427,6 +1640,14 @@ class SupabaseService {
       'issued_by': user.id,
       'message': message,
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee
+    await sendNotification(
+      recipientId: employeeId,
+      title: "Official Warning",
+      message:
+          "An official warning has been issued to your profile. Please review it.",
+    );
   }
 
   // 2. Get warning count for a specific employee
@@ -1478,6 +1699,13 @@ class SupabaseService {
       'start_date': startDate, // Passed to DB
       'end_date': endDate, // Passed to DB
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Broadcast Announcement
+    await sendMassNotification(
+      title: "New Announcement: $title",
+      message: "A new company announcement has been posted.",
+      branchId: branchId,
+    );
   }
 
   // 2. Fetch Announcements (We will upgrade this to a Stream later!)
@@ -1566,6 +1794,13 @@ class SupabaseService {
         .from('profiles')
         .update({'role': newRole})
         .eq('id', employeeId);
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee
+    await sendNotification(
+      recipientId: employeeId,
+      title: "Role Update",
+      message: "Your system role has been updated to $newRole.",
+    );
   }
 
   // 1. Create a custom job title
@@ -1799,6 +2034,20 @@ class SupabaseService {
       'amount': amount,
       'is_deduction': isDeduction,
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Notify Business Owner of deduction
+    if (isDeduction) {
+      final empProfile = await _supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', profileId)
+          .single();
+      await notifyBusinessOwner(
+        title: "Payslip Deduction Logged",
+        message:
+            "A deduction of $amount ($itemName) was added to ${empProfile['full_name']}'s payslip.",
+      );
+    }
   }
 
   // --- ACCOUNTS MANAGEMENT ---
@@ -2484,7 +2733,7 @@ class SupabaseService {
 
     final profile = await _supabase
         .from('profiles')
-        .select('tenant_id')
+        .select('tenant_id, full_name')
         .eq('id', user.id)
         .single();
 
@@ -2498,6 +2747,12 @@ class SupabaseService {
       'status': 'Open',
       'attachment_url': attachmentUrl,
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Admin
+    await notifyBusinessOwner(
+      title: "New Ticket ($category)",
+      message: "${profile['full_name']} submitted a new ticket: $title.",
+    );
   }
 
   // 4. Update Ticket Status
@@ -2506,6 +2761,23 @@ class SupabaseService {
         .from('tickets')
         .update({'status': newStatus})
         .eq('id', ticketId);
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Ticket Creator
+    try {
+      final ticket = await _supabase
+          .from('tickets')
+          .select('employee_id, title')
+          .eq('id', ticketId)
+          .single();
+      await sendNotification(
+        recipientId: ticket['employee_id'],
+        title: "Ticket Update",
+        message:
+            "Your ticket '${ticket['title']}' is now marked as $newStatus.",
+      );
+    } catch (e) {
+      // Silently fail if fetching ticket info fails
+    }
   }
 
   // 5. Get Current User's Role
@@ -2918,6 +3190,31 @@ class SupabaseService {
         .from('chat_rooms')
         .update({'updated_at': DateTime.now().toIso8601String()})
         .eq('id', roomId);
+
+    // 🚀 NOTIFICATION TRIGGER: Ping the recipient of the message
+    try {
+      final room = await _supabase
+          .from('chat_rooms')
+          .select('user_one, user_two')
+          .eq('id', roomId)
+          .single();
+      final String recipientId = room['user_one'] == user.id
+          ? room['user_two']
+          : room['user_one'];
+      final senderProfile = await _supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+      await sendNotification(
+        recipientId: recipientId,
+        title: "New Message",
+        message: "${senderProfile['full_name']} sent you a message.",
+      );
+    } catch (e) {
+      debugPrint("Failed to send message notification: $e");
+    }
   }
 
   // Clear unread counts upon entering a chat window
@@ -3001,7 +3298,7 @@ class SupabaseService {
     // Grab the tenant ID context
     final profile = await _supabase
         .from('profiles')
-        .select('tenant_id')
+        .select('tenant_id, full_name')
         .eq('id', user.id)
         .single();
 
@@ -3015,6 +3312,12 @@ class SupabaseService {
       'claim_date': DateTime.now().toIso8601String().split('T')[0],
       'receipt_url': receiptUrl,
     });
+
+    // 🚀 NOTIFICATION TRIGGER: Notify Business Owner
+    await notifyBusinessOwner(
+      title: "New Expense Claim",
+      message: "${profile['full_name']} submitted a claim for $amount.",
+    );
   }
 
   // ==========================================
@@ -3168,6 +3471,12 @@ class SupabaseService {
 
     // 6. Save every payslip to the database
     await _supabase.from('payslips').insert(payslipsToInsert);
+
+    // 🚀 NOTIFICATION TRIGGER: Tell everyone their payslips are ready!
+    await sendMassNotification(
+      title: "Payslip Generated",
+      message: "Your payslip for $monthYear is now available.",
+    );
   }
 
   // ==========================================
@@ -3306,6 +3615,18 @@ class SupabaseService {
         'scheduled_date': scheduledDate?.toIso8601String(),
         'status': 'pending',
       });
+
+      // 🚀 NOTIFICATION TRIGGER: Tell the Trainer and Trainee
+      await sendNotification(
+        recipientId: trainerId,
+        title: "Training Scheduled",
+        message: "You have been assigned to train a team member on: $topic.",
+      );
+      await sendNotification(
+        recipientId: traineeId,
+        title: "Training Scheduled",
+        message: "You have been scheduled for training on: $topic.",
+      );
     } catch (e) {
       debugPrint('Error creating training: $e');
       rethrow;
@@ -3379,6 +3700,15 @@ class SupabaseService {
     } else {
       // Update existing
       await _supabase.from('assets').update(payload).eq('id', assetId);
+    }
+
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee they got a new asset
+    if (assignedTo != null) {
+      await sendNotification(
+        recipientId: assignedTo,
+        title: "New Equipment Assigned",
+        message: "$name has been assigned to your profile.",
+      );
     }
   }
 
@@ -3577,56 +3907,20 @@ class SupabaseService {
         .from('appraisals')
         .update({'score': score, 'comments': comments, 'status': status})
         .eq('id', appraisalId);
-  }
 
-  // ==========================================
-  // --- IN-APP NOTIFICATIONS ---
-  // ==========================================
-
-  // 1. Fetch my notifications
-  Future<List<Map<String, dynamic>>> getMyNotifications() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return [];
-
-    final response = await _supabase
-        .from('notifications')
-        .select('*')
-        .eq('profile_id', user.id)
-        .order('created_at', ascending: false)
-        .limit(50); // Only keep the 50 most recent
-
-    return List<Map<String, dynamic>>.from(response);
-  }
-
-  // 2. Mark a notification as read
-  Future<void> markNotificationAsRead(String notificationId) async {
-    await _supabase
-        .from('notifications')
-        .update({'is_read': true})
-        .eq('id', notificationId);
-  }
-
-  // 3. The Helper to SEND a notification from anywhere in your code
-  Future<void> sendNotification({
-    required String recipientId,
-    required String title,
-    required String message,
-  }) async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
-    final profile = await _supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .single();
-
-    await _supabase.from('notifications').insert({
-      'tenant_id': profile['tenant_id'],
-      'profile_id': recipientId, // Who receives it
-      'title': title,
-      'message': message,
-      'is_read': false,
-    });
+    // 🚀 NOTIFICATION TRIGGER: Tell the Employee
+    if (status == 'Completed') {
+      final data = await _supabase
+          .from('appraisals')
+          .select('employee_id')
+          .eq('id', appraisalId)
+          .single();
+      await sendNotification(
+        recipientId: data['employee_id'],
+        title: "Performance Review Completed",
+        message:
+            "Your manager has finalized your appraisal. Tap to view your score and feedback.",
+      );
+    }
   }
 }
