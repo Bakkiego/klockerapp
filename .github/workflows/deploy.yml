@@ -26,11 +26,11 @@ jobs:
 
       - name: 🚀 Deploy to Hostinger via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
+        with:    
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./build/web/
           # 👇 CRITICAL: Verify this path matches your Hostinger folder structure!
           # If your FTP account opens directly into public_html, it might just be /app/
-          server-dir: /domains/klockerapp.com/public_html/app/
+          server-dir: /public_html/app/
