@@ -33,4 +33,4 @@ jobs:
           local-dir: ./build/web/
           # 👇 CRITICAL: Verify this path matches your Hostinger folder structure!
           # If your FTP account opens directly into public_html, it might just be /app/
-          server-dir: /domains/klockerapp.com/public_html/app/
+          server-dir: public_html/app/
