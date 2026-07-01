@@ -19,7 +19,7 @@ class MenuExpansionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ExpansionTile(
-      title: Text("$dropdown_menu_title", style: const TextStyle(fontSize: 25)),
+      title: Text("$dropdown_menu_title", style: const TextStyle(fontSize: 15)),
       leading: Icon(icon),
       children: _buildTiles,
     );
