@@ -111,6 +111,7 @@ class _PayersScreenState extends State<PayersScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         onPressed: () async {

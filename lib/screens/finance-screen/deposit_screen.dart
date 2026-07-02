@@ -121,6 +121,7 @@ class _DepositScreenState extends State<DepositScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           final result = await Navigator.push(
             context,

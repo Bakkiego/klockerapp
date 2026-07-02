@@ -59,6 +59,7 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
       // 🚀 GRANULAR SECURITY: Hide the Add button if they lack permission
       floatingActionButton: canManageDepartments
           ? FloatingActionButton.extended(
+              heroTag: null,
               onPressed: () async {
                 // Navigates to Add Screen and refreshes list when returning!
                 final result = await Navigator.push(

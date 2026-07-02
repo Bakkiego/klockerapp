@@ -210,6 +210,7 @@ class _AccountsListScreenState extends State<AccountsListScreen> {
 
       // Floating Action Button
       floatingActionButton: FloatingActionButton(
+        heroTag: null,
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,
         onPressed: () async {

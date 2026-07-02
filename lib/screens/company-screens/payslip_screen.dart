@@ -650,6 +650,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
       // 🚀 GRANULAR SECURITY: Hide the critical "Run Payroll" button
       floatingActionButton: canRunPayroll
           ? FloatingActionButton.extended(
+              heroTag: null,
               onPressed: _showRunPayrollDialog,
               backgroundColor: const Color(0xFF00A36C),
               foregroundColor: Colors.white,

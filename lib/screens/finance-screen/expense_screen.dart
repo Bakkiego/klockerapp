@@ -138,6 +138,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           final result = await Navigator.push(
             context,

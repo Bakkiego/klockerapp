@@ -210,6 +210,7 @@ class _TicketingScreenState extends State<TicketingScreen>
 
       // --- 4. FLOATING ACTION BUTTON ---
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           final result = await Navigator.push(
             context,

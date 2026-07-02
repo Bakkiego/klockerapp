@@ -307,6 +307,7 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
               },
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: _showAddExpenseSheet,
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,

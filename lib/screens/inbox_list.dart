@@ -377,6 +377,7 @@ class _InboxListState extends State<InboxList> {
                     ),
             ),
       floatingActionButton: FloatingActionButton(
+        heroTag: null,
         onPressed: _showNewChatSheet,
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,

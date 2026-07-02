@@ -341,6 +341,7 @@ class _TrainingDesignatorScreenState extends State<TrainingDesignatorScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: _showAssignTrainingDialog,
         backgroundColor: const Color(0xFF00A36C),
         icon: const Icon(Icons.add, color: Colors.white),

@@ -57,6 +57,7 @@ class _ManageShiftsScreenState extends State<ManageShiftsScreen> {
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: null,
         onPressed: () => _showShiftDialog(),
         backgroundColor: const Color(0xFF00A36C),
         child: const Icon(Icons.add, color: Colors.white),

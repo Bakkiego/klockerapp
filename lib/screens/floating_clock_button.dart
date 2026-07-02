@@ -175,6 +175,7 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const FloatingActionButton.extended(
+        heroTag: null,
         onPressed: null,
         backgroundColor: Colors.grey,
         label: SizedBox(
@@ -201,6 +202,7 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
     }
 
     return FloatingActionButton.extended(
+      heroTag: null,
       onPressed: _isProcessing
           ? null
           : () {

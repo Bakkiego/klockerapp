@@ -170,6 +170,7 @@ class _SalaryScreenState extends State<SalaryScreen> {
       // 🚀 GRANULAR SECURITY: Hide the FAB if they lack the configuration permission
       floatingActionButton: canManageSalaryConfigs
           ? FloatingActionButton(
+              heroTag: null,
               onPressed: () async {
                 await Navigator.push(
                   context,

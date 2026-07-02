@@ -300,6 +300,7 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () => _showAssetDialog(), // Null means ADD
         backgroundColor: const Color(0xFF00A36C),
         icon: const Icon(Icons.add, color: Colors.white),

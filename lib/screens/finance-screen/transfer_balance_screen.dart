@@ -205,6 +205,7 @@ class _ManageTransferScreenState extends State<ManageTransferScreen> {
 
       // 3. Floating Action Button (FAB)
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           // 🚀 Navigate to the actual Add Screen, wait for result to refresh
           final result = await Navigator.push(

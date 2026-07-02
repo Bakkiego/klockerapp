@@ -111,6 +111,7 @@ class _PayeeScreenState extends State<PayeeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,
         onPressed: () async {

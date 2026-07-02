@@ -734,6 +734,7 @@ class _PayslipDetailScreenState extends State<PayslipDetailScreen> {
       // 🚀 GRANULAR SECURITY: Hide the add button entirely if they lack permission
       floatingActionButton: canManagePayslipItems
           ? FloatingActionButton.extended(
+              heroTag: null,
               onPressed: _showAddAdjustmentDialog,
               backgroundColor: const Color(0xFF00A36C),
               icon: const Icon(Icons.add, color: Colors.white),

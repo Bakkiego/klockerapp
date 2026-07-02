@@ -88,6 +88,7 @@ class _PerformanceScreenState extends State<PerformanceScreen>
 
       // 🚀 THE DYNAMIC FAB 🚀
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           if (isOverviewTab) {
             final result = await Navigator.push(

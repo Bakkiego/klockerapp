@@ -395,6 +395,7 @@ class _CalendarState extends State<Calendar> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: _showAddEventDialog,
         icon: const Icon(Icons.add),
         label: const Text("Add Event"),

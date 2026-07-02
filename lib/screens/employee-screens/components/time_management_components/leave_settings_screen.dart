@@ -268,6 +268,7 @@ class _LeaveSettingsScreenState extends State<LeaveSettingsScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () => _showAddPolicyDialog(),
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,

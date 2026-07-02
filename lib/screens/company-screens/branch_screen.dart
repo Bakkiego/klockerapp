@@ -58,6 +58,7 @@ class _BranchScreenState extends State<BranchScreen> {
       // 🚀 GRANULAR SECURITY: Hide the Add button if they lack permission
       floatingActionButton: canManageBranches
           ? FloatingActionButton.extended(
+              heroTag: null,
               onPressed: () {
                 Navigator.push(
                   context,

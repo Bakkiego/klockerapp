@@ -78,6 +78,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
               ),
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () async {
           final result = await Navigator.push(
             context,
