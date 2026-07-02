@@ -22,7 +22,7 @@ jobs:
         run: flutter pub get
 
       - name: 🛠️ Build Flutter Web
-        run: flutter build web --web-renderer canvaskit --release
+        run: flutter build web --dart-define=FLUTTER_WEB_USE_SKIA=true --release
 
       - name: 🚀 Deploy to Hostinger via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
