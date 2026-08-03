@@ -28,13 +28,14 @@ import 'package:klockerapp/screens/finance-screen/payers_screen.dart';
 import 'package:klockerapp/screens/finance-screen/transfer_balance_screen.dart';
 import 'package:klockerapp/screens/company-screens/company_screen.dart';
 import 'package:klockerapp/screens/company-screens/training_screen.dart';
-import 'package:klockerapp/screens/finance-screen/report_screen.dart';
 import 'package:klockerapp/screens/help-screens/settings_screen.dart';
 import 'package:klockerapp/screens/help-screens/help_screen.dart';
 import 'company-screens/ticketing_screen.dart';
 import 'package:klockerapp/screens/profile_settings_screen.dart';
 import 'zoom_meetings_screen.dart';
 import 'login_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+import "package:klockerapp/screens/company-screens/reports_screen.dart";
 
 class Menu extends StatelessWidget {
   const Menu({super.key});
@@ -173,17 +174,6 @@ class Menu extends StatelessWidget {
     // Finance Management (PREMIUM TIER ONLY)
     if (tierLevel >= 4) {
       if (userProvider.can('manage_expenses')) {
-        financeList.add(
-          MenuExpansionOBJ(
-            title: 'Employee Expenses',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const EmployeeExpenseScreen(),
-              ),
-            ),
-          ),
-        );
         financeList.add(
           MenuExpansionOBJ(
             title: 'Expense',
@@ -363,6 +353,25 @@ class Menu extends StatelessWidget {
             MaterialPageRoute(builder: (context) => const TimeManagement()),
           ),
         ),
+
+        if (userProvider.can('view_reports'))
+          MenuItemDesign(
+            'Reports',
+            Icons.bar_chart,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ReportsScreen()),
+            ),
+          ),
+        if (userProvider.can('manage_careers'))
+          MenuItemDesign('Careers Portal', Icons.work_outline, () async {
+            final Uri url = Uri.parse('https://careers.klockerapp.com');
+            if (await canLaunchUrl(url)) {
+              await launchUrl(url, mode: LaunchMode.externalApplication);
+            } else {
+              debugPrint("Could not launch $url");
+            }
+          }),
 
         // Only render the ExpansionTiles if the lists actually have items inside them!
         if (hrmList.isNotEmpty)

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// Assuming this import contains the logic for the tiles
 import 'package:klockerapp/screens/employee-screens/components/employee_screen_components/data_collector_list.dart';
-
 import '../../../../supabase/repo/supabase_service.dart';
 
 class EditEmployeeDetailsScreen extends StatefulWidget {
-  final Map<String, dynamic> employee; // Pass the employee map here
+  final Map<String, dynamic> employee;
 
   const EditEmployeeDetailsScreen({super.key, required this.employee});
 
@@ -18,39 +16,40 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
   final DataCollectorList dataCollectorList = DataCollectorList();
   final SupabaseService _service = SupabaseService();
 
-  // 🚀 1. NEW: State variables for the Custom Role engine
+  // 🚀 NEW: Controller for the ID Number
+  final TextEditingController _idNumberController = TextEditingController();
+
   List<Map<String, dynamic>> _availableRoles = [];
   String? _selectedRoleId;
   String? _selectedRoleName;
   bool _isLoadingRoles = true;
 
   @override
-  initState() {
+  void initState() {
     super.initState();
-    // Pre-fill the controllers with the existing data from Supabase
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _idNumberController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInitialData() async {
     try {
-      // 1. Fetch data from Supabase
       final branches = await _service.getBranchNames();
       final depts = await _service.getDepartmentNames();
-
-      // 🚀 2. Fetch the NEW unified Tenant Roles instead of the old job titles
       final roles = await _service.getTenantRoles();
 
       if (mounted) {
         setState(() {
-          // 3. Update the dynamic lists in the collector
           dataCollectorList.branchOptions = branches;
           dataCollectorList.deptOptions = depts;
-          // We feed it an empty list so the old string-based dropdown doesn't crash or get confused
           dataCollectorList.jobTitleOptions = [];
 
           final employeeData = widget.employee;
 
-          // Branch & Dept Logic
           String? currentBranch = employeeData['branch'];
           if (branches.contains(currentBranch)) {
             dataCollectorList.selectedBranch = currentBranch;
@@ -61,7 +60,6 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
             dataCollectorList.selectedDept = currentDept;
           }
 
-          // 4. Fill Text Controllers
           dataCollectorList.nameController.text =
               employeeData['full_name'] ?? '';
           dataCollectorList.emailController.text = employeeData['email'] ?? '';
@@ -72,11 +70,12 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
           dataCollectorList.dateController.text =
               employeeData['hire_date'] ?? '';
 
-          // 5. Set Legacy Dropdown Values
-          dataCollectorList.selectedRole =
-              employeeData['role']; // System Access
+          // 🚀 NEW: Pre-fill the ID Number from the database
+          _idNumberController.text =
+              employeeData['identification_number'] ?? '';
 
-          // 🚀 6. Pre-select the employee's Custom Role if they already have one
+          dataCollectorList.selectedRole = employeeData['role'];
+
           _availableRoles = roles;
           _isLoadingRoles = false;
           _selectedRoleId = employeeData['custom_role_id'];
@@ -123,21 +122,30 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Personal Details Form
                 ...dataCollectorList.personalTileBody,
                 const SizedBox(height: 16),
 
-                // Company Details Form
+                // 🚀 NEW: Standalone ID Number Field
+                TextFormField(
+                  controller: _idNumberController,
+                  decoration: InputDecoration(
+                    labelText: 'ID Number (Identification)',
+                    prefixIcon: const Icon(Icons.badge_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 ...dataCollectorList.getCompanyTileBody(
                   onDateTap: _selectDate,
                   onRefresh: () {
                     setState(() {});
                   },
                 ),
-
                 const SizedBox(height: 24),
 
-                // 🚀 7. NEW: The Dedicated Custom Role Dropdown
                 _isLoadingRoles
                     ? const Center(
                         child: CircularProgressIndicator(
@@ -181,16 +189,13 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                               hint: const Text("Select a custom role..."),
                               items: _availableRoles.map((role) {
                                 return DropdownMenuItem<String>(
-                                  value: role['id'], // Saves the UUID
-                                  child: Text(
-                                    role['role_name'],
-                                  ), // Shows the name
+                                  value: role['id'],
+                                  child: Text(role['role_name']),
                                 );
                               }).toList(),
                               onChanged: (String? newRoleId) {
                                 setState(() {
                                   _selectedRoleId = newRoleId;
-                                  // Find the matching name so we can save it as their display 'job_title'
                                   _selectedRoleName = _availableRoles
                                       .firstWhere(
                                         (r) => r['id'] == newRoleId,
@@ -201,10 +206,8 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                           ],
                         ),
                       ),
-
                 const SizedBox(height: 32),
 
-                // Save Button
                 SizedBox(
                   height: 50,
                   child: ElevatedButton(
@@ -217,7 +220,6 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                     onPressed: () async {
                       if (dataCollectorList.formKey.currentState!.validate()) {
                         try {
-                          // 🚀 8. UPDATED: Inject the new role data into the update payload
                           final Map<String, dynamic> employeeUpdates = {
                             'full_name': dataCollectorList.nameController.text
                                 .trim(),
@@ -228,12 +230,12 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                             'branch': dataCollectorList.selectedBranch,
                             'hire_date': dataCollectorList.dateController.text
                                 .trim(),
-                            'role': dataCollectorList
-                                .selectedRole, // Legacy Fallback
-                            'custom_role_id':
-                                _selectedRoleId, // 🚀 Saves the UUID to trigger permissions
-                            'job_title':
-                                _selectedRoleName, // 🚀 Saves the string so the UI Directory looks normal
+                            'role': dataCollectorList.selectedRole,
+                            'custom_role_id': _selectedRoleId,
+                            'job_title': _selectedRoleName,
+                            // 🚀 NEW: Save the ID Number!
+                            'identification_number': _idNumberController.text
+                                .trim(),
                           };
 
                           await _service.updateEmployeeProfile(

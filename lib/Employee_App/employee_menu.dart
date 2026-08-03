@@ -35,9 +35,12 @@ class EmployeeMenu extends StatelessWidget {
 
     // --- EXACT PLAN MAPPING ---
     // Shifts unlock at Basic and go up
+    // --- EXACT PLAN MAPPING ---
+    // Shifts unlock at Basic and go up
     bool canSeeShifts = [
       'basic',
       'standard',
+      'premium', // 🚀 ADDED
       'enterprise',
     ].contains(currentTier);
 
@@ -45,17 +48,30 @@ class EmployeeMenu extends StatelessWidget {
     bool canSeePayslips = [
       'basic',
       'standard',
+      'premium', // 🚀 ADDED
       'enterprise',
     ].contains(currentTier);
 
-    // Leave Requests are reserved for Standard and Enterprise
-    bool canRequestLeave = ['standard', 'enterprise'].contains(currentTier);
+    // Leave Requests are reserved for Standard, Premium, and Enterprise
+    bool canRequestLeave = [
+      'standard',
+      'premium', // 🚀 ADDED
+      'enterprise',
+    ].contains(currentTier);
 
-    // 🚀 Expenses are reserved for Standard and Enterprise
-    bool canSubmitExpenses = ['standard', 'enterprise'].contains(currentTier);
+    // 🚀 Expenses are reserved for Standard, Premium, and Enterprise
+    bool canSubmitExpenses = [
+      'standard',
+      'premium', // 🚀 ADDED
+      'enterprise',
+    ].contains(currentTier);
 
-    // Ticketing is reserved for Standard and Enterprise
-    bool canUseTicketing = ['standard', 'enterprise'].contains(currentTier);
+    // Ticketing is reserved for Standard, Premium, and Enterprise
+    bool canUseTicketing = [
+      'standard',
+      'premium', // 🚀 ADDED
+      'enterprise',
+    ].contains(currentTier);
 
     return SafeArea(
       child: ListView(

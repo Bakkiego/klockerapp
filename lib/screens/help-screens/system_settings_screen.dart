@@ -39,6 +39,18 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
           _selectedLanguage = data['language'] ?? 'English';
           _isLoadingData = false;
         });
+
+        // 🚀 THE FIX: Push the loaded currency to the provider immediately
+        if (_selectedCurrency != null) {
+          final loadedCurrency = CurrencyService().findByCode(
+            _selectedCurrency!,
+          );
+          if (loadedCurrency != null) {
+            context.read<UserProvider>().setCurrencySymbol(
+              loadedCurrency.symbol,
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _isLoadingData = false);

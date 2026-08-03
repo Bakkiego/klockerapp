@@ -18,7 +18,7 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
   late TextEditingController _grossSalaryController;
   late TextEditingController _hourlyRateController;
   late TextEditingController _allowancesController;
-
+  late TextEditingController _taxNumberController = TextEditingController();
   // 🚀 MULTIPLE DEDUCTIONS STATE
   List<Map<String, dynamic>> _deductionsList = [];
   final TextEditingController _newDedNameController = TextEditingController();
@@ -41,7 +41,9 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
     _selectedPayrollType = widget.initialSalaryData['payrollType'];
     if (!_payrollTypes.contains(_selectedPayrollType))
       _selectedPayrollType = _payrollTypes.first;
-
+    _taxNumberController = TextEditingController(
+      text: widget.initialSalaryData['taxNumber'] ?? '',
+    );
     final gross = widget.initialSalaryData['grossSalary']?.toString() ?? '';
     _grossSalaryController = TextEditingController(text: gross);
     _hourlyRateController = TextEditingController(text: gross);
@@ -103,6 +105,7 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
           structuredDeductions:
               _deductionsList, // 🚀 Passes the modified array!
           allowances: allowancesVal,
+          taxNumber: _taxNumberController.text.trim(),
         );
 
         if (mounted) {
@@ -181,9 +184,19 @@ class _EditSalaryRateScreenState extends State<EditSalaryRateScreen> {
                 controller: _allowancesController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: 'Default Allowances',
+                  labelText: 'Default Allowances (Optional)',
                   prefixText: '$currency ',
                   prefixIcon: const Icon(Icons.card_giftcard),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 🚀 ADD THIS TAX NUMBER FIELD:
+              TextFormField(
+                controller: _taxNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Income Tax Number (SARS)',
+                  prefixIcon: Icon(Icons.account_balance),
                 ),
               ),
               const SizedBox(height: 24),

@@ -17,7 +17,7 @@ class _AddSalaryRateScreenState extends State<AddSalaryRateScreen> {
   final TextEditingController _grossSalaryController = TextEditingController();
   final TextEditingController _hourlyRateController = TextEditingController();
   final TextEditingController _allowancesController = TextEditingController();
-
+  final TextEditingController _taxNumberController = TextEditingController();
   // 🚀 STATE FOR MULTIPLE DEDUCTIONS
   final List<Map<String, dynamic>> _deductionsList = [];
   final TextEditingController _newDedNameController = TextEditingController();
@@ -102,6 +102,7 @@ class _AddSalaryRateScreenState extends State<AddSalaryRateScreen> {
           baseRate: baseRate,
           structuredDeductions: _deductionsList, // 🚀 Passes the array!
           allowances: allowancesVal,
+          taxNumber: _taxNumberController.text.trim(),
         );
 
         if (mounted) {
@@ -209,6 +210,16 @@ class _AddSalaryRateScreenState extends State<AddSalaryRateScreen> {
                   labelText: 'Default Allowances (Optional)',
                   prefixText: '$currency ',
                   prefixIcon: const Icon(Icons.card_giftcard),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 🚀 ADD THIS TAX NUMBER FIELD:
+              TextFormField(
+                controller: _taxNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Income Tax Number (SARS)',
+                  prefixIcon: Icon(Icons.account_balance),
                 ),
               ),
               const SizedBox(height: 24),

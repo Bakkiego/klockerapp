@@ -12,57 +12,41 @@ class AddExpenseScreen extends StatefulWidget {
 class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _payeeController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _paymentMethodController =
       TextEditingController();
   final TextEditingController _refController = TextEditingController();
 
   String? _selectedAccountId;
+  String? _selectedCategory; // 🚀 Replaces Payee
   DateTime _selectedDate = DateTime.now();
 
   List<Map<String, dynamic>> _availableAccounts = [];
-  bool _isLoadingAccounts = true;
+  List<Map<String, dynamic>> _categories = []; // 🚀 Holds DB categories
+  bool _isLoading = true;
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchAccounts();
+    _fetchInitialData();
   }
 
-  Future<void> _fetchAccounts() async {
+  Future<void> _fetchInitialData() async {
     try {
-      final accounts = await SupabaseService().getAccounts();
+      final results = await Future.wait([
+        SupabaseService().getAccounts(),
+        SupabaseService().getExpenseCategories(), // Fetch manager's categories
+      ]);
       if (mounted) {
         setState(() {
-          _availableAccounts = accounts;
-          _isLoadingAccounts = false;
+          _availableAccounts = results[0];
+          _categories = results[1];
+          _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingAccounts = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _payeeController.dispose();
-    _amountController.dispose();
-    _paymentMethodController.dispose();
-    _refController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _selectDate() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
-    if (pickedDate != null && pickedDate != _selectedDate) {
-      setState(() => _selectedDate = pickedDate);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -73,10 +57,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         final amount = double.parse(_amountController.text.replaceAll(',', ''));
         final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
-        // 🚀 This automatically deducts from the bank balance via our SQL trigger!
+        // 🚀 Updated logic: passing category instead of payee
         await SupabaseService().addExpense(
           accountId: _selectedAccountId!,
-          payee: _payeeController.text.trim(),
+          category: _selectedCategory!,
           amount: amount,
           date: formattedDate,
           paymentMethod: _paymentMethodController.text.trim(),
@@ -84,13 +68,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         );
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Expense Recorded!'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          Navigator.pop(context, true); // Trigger refresh
+          Navigator.pop(context, true);
         }
       } catch (e) {
         if (mounted) {
@@ -108,7 +86,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Add New Expense')),
-      body: _isLoadingAccounts
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.red))
           : Form(
               key: _formKey,
@@ -122,31 +100,42 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                       prefixIcon: Icon(Icons.account_balance_wallet),
                     ),
                     value: _selectedAccountId,
-                    items: _availableAccounts.map((account) {
-                      return DropdownMenuItem<String>(
-                        value: account['id'],
-                        child: Text(account['name']),
-                      );
-                    }).toList(),
+                    items: _availableAccounts
+                        .map(
+                          (a) => DropdownMenuItem<String>(
+                            value: a['id'],
+                            child: Text(a['name']),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (val) =>
                         setState(() => _selectedAccountId = val),
                     validator: (val) =>
-                        val == null ? 'Select a source account' : null,
+                        val == null ? 'Select an account' : null,
                   ),
                   const SizedBox(height: 16),
 
-                  // 2. Reason / Payee
-                  TextFormField(
-                    controller: _payeeController,
+                  // 2. 🚀 Dropdown replacing Payee/Description
+                  DropdownButtonFormField<String>(
                     decoration: const InputDecoration(
-                      labelText: 'Reason / Payee',
-                      prefixIcon: Icon(Icons.person),
+                      labelText: 'Expense Category',
+                      prefixIcon: Icon(Icons.category),
                     ),
-                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                    value: _selectedCategory,
+                    items: _categories
+                        .map(
+                          (c) => DropdownMenuItem<String>(
+                            value: c['category_name'],
+                            child: Text(c['category_name']),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) => setState(() => _selectedCategory = val),
+                    validator: (val) => val == null ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
 
-                  // 3. Amount (Styled for Expenses)
+                  // 3. Amount
                   TextFormField(
                     controller: _amountController,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -154,11 +143,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     decoration: const InputDecoration(
                       labelText: 'Amount',
-                      prefixText: '\$ ',
-                      prefixIcon: Icon(
-                        Icons.remove_circle_outline,
-                        color: Colors.red,
-                      ),
+                      prefixIcon: Icon(Icons.attach_money, color: Colors.red),
                     ),
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
@@ -166,7 +151,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
                   // 4. Date Selection
                   InkWell(
-                    onTap: _selectDate,
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null)
+                        setState(() => _selectedDate = picked);
+                    },
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'Date of Expense',
@@ -174,36 +168,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                       ),
                       child: Text(
                         DateFormat('MMM dd, yyyy').format(_selectedDate),
-                        style: const TextStyle(fontSize: 16),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // 5. Optional Details
-                  TextFormField(
-                    controller: _paymentMethodController,
-                    decoration: const InputDecoration(
-                      labelText: 'Payment Method (Optional)',
-                      prefixIcon: Icon(Icons.credit_card),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _refController,
-                    decoration: const InputDecoration(
-                      labelText: 'Reference # (Optional)',
-                      prefixIcon: Icon(Icons.numbers),
-                    ),
-                  ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
 
                   ElevatedButton.icon(
                     onPressed: _isSubmitting ? null : _submitExpense,
                     icon: const Icon(Icons.outbox),
                     label: Text(
                       _isSubmitting ? 'Recording...' : 'Record Expense',
-                      style: const TextStyle(fontSize: 18),
                     ),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),

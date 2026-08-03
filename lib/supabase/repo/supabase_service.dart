@@ -587,11 +587,242 @@ class SupabaseService {
   }
 
   // ==========================================
-  // MANAGER: LIVE ATTENDANCE (SMART MERGE)
-  // ==========================================
-  // ==========================================
   // MANAGER: LIVE ATTENDANCE (DATE SPECIFIC)
   // ==========================================
+  // Fetch Attendance by Date Range
+  Future<List<Map<String, dynamic>>> getCompanyAttendanceByDateRange(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception("User not logged in");
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+    final tenantId = profile['tenant_id'];
+
+    // 1. Formatting date boundaries
+    // Roster bounds (YYYY-MM-DD)
+    final String startStr =
+        "${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}";
+    final String endStr =
+        "${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}";
+
+    // Attendance bounds (UTC ISO Strings)
+    final startIso = DateTime(
+      start.year,
+      start.month,
+      start.day,
+    ).toUtc().toIso8601String();
+    final endIso = DateTime(
+      end.year,
+      end.month,
+      end.day,
+      23,
+      59,
+      59,
+    ).toUtc().toIso8601String();
+
+    // 2. Fetch SCHEDULED shifts for the entire range
+    final scheduledRosters = await _supabase
+        .from('rosters')
+        .select('''
+        profile_id,
+        shift_date,
+        profiles!inner(full_name),
+        shift_templates!inner(start_time)
+      ''')
+        .eq('tenant_id', tenantId)
+        .gte('shift_date', startStr)
+        .lte('shift_date', endStr);
+
+    // 3. Fetch ACTUAL clock-ins for the entire range
+    final actualAttendance = await _supabase
+        .from('attendance')
+        .select('*, profiles!profile_id(full_name)')
+        .eq('tenant_id', tenantId)
+        .gte('clock_in', startIso)
+        .lte('clock_in', endIso);
+
+    List<Map<String, dynamic>> finalReport = [];
+    Set<String> claimedAttendanceIds = {};
+    DateTime currentRealTime = DateTime.now();
+
+    // 4. Cross-Reference Logic (Schedule vs Reality)
+    for (var roster in scheduledRosters) {
+      final profileId = roster['profile_id'];
+      final employeeName =
+          roster['profiles']?['full_name'] ?? 'Unknown Employee';
+      final String shiftDateStr = roster['shift_date'];
+      final String startTimeStr =
+          roster['shift_templates']?['start_time'] ?? '00:00:00';
+
+      // Parse the roster's exact date and time
+      final shiftDateParts = shiftDateStr.split('-');
+      final List<String> timeParts = startTimeStr.split(':');
+      final expectedStartTime = DateTime(
+        int.parse(shiftDateParts[0]),
+        int.parse(shiftDateParts[1]),
+        int.parse(shiftDateParts[2]),
+        int.tryParse(timeParts[0]) ?? 0,
+        timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0,
+      );
+
+      // Look for a matching punch-in for THIS specific employee on THIS specific date
+      Map<String, dynamic>? matchedRecord;
+      for (var record in actualAttendance) {
+        String attDateStr = record['date'] ?? '';
+
+        // Fallback: If 'date' column is empty, grab it from clock_in
+        if (attDateStr.isEmpty && record['clock_in'] != null) {
+          final localClockIn = DateTime.parse(record['clock_in']).toLocal();
+          attDateStr =
+              "${localClockIn.year}-${localClockIn.month.toString().padLeft(2, '0')}-${localClockIn.day.toString().padLeft(2, '0')}";
+        }
+
+        if (record['profile_id'] == profileId &&
+            attDateStr == shiftDateStr &&
+            !claimedAttendanceIds.contains(record['id'])) {
+          matchedRecord = record;
+          break;
+        }
+      }
+
+      if (matchedRecord != null) {
+        // --- THEY CLOCKED IN ---
+        claimedAttendanceIds.add(matchedRecord['id']);
+        final actualClockIn = DateTime.parse(
+          matchedRecord['clock_in'],
+        ).toLocal();
+        final isLate =
+            actualClockIn.difference(expectedStartTime).inMinutes > 0;
+
+        final String dbStatus =
+            matchedRecord['status']?.toString().toLowerCase() ?? 'active';
+        final bool isOt = matchedRecord['is_overtime'] == true;
+        final bool otApproved = matchedRecord['overtime_approved'] == true;
+        final bool earlyLeaveApproved =
+            matchedRecord['early_leave_approved'] == true;
+
+        String rawStatus = dbStatus;
+        if (isOt && !otApproved) {
+          rawStatus = 'overtime_pending';
+        } else if (dbStatus == 'early_leave_pending' && !earlyLeaveApproved) {
+          rawStatus = 'early_leave_pending';
+        }
+
+        String displayStatus = 'Present';
+        if (dbStatus == 'absent')
+          displayStatus = 'Absent';
+        else if (isLate)
+          displayStatus = 'Late';
+
+        finalReport.add({
+          'id': matchedRecord['id'],
+          'name': employeeName,
+          'clock_in': matchedRecord['clock_in'],
+          'clock_out': matchedRecord['clock_out'],
+          'status': displayStatus,
+          'raw_status': rawStatus,
+          'is_late': isLate,
+          'expected_start': expectedStartTime.toIso8601String(),
+          'overtime_minutes': matchedRecord['overtime_minutes'],
+        });
+      } else {
+        // --- THEY DID NOT CLOCK IN (Generate Virtual Absent Row) ---
+        String status = currentRealTime.isAfter(expectedStartTime)
+            ? 'Absent'
+            : 'Upcoming';
+        finalReport.add({
+          'name': employeeName,
+          'clock_in': null,
+          'clock_out': null,
+          'expected_start': expectedStartTime.toIso8601String(),
+          'status': status,
+          'raw_status': status.toLowerCase(),
+        });
+      }
+    }
+
+    // 5. Process Unscheduled Walk-ins
+    for (var attendance in actualAttendance) {
+      if (!claimedAttendanceIds.contains(attendance['id'])) {
+        final String dbStatus =
+            attendance['status']?.toString().toLowerCase() ?? 'active';
+        final bool isOt = attendance['is_overtime'] == true;
+        final bool otApproved = attendance['overtime_approved'] == true;
+
+        String rawStatus = dbStatus;
+        if (isOt && !otApproved)
+          rawStatus = 'overtime_pending';
+        else if (dbStatus == 'early_leave_pending')
+          rawStatus = 'early_leave_pending';
+
+        finalReport.add({
+          'id': attendance['id'],
+          'name': attendance['profiles']?['full_name'] ?? 'Unknown Employee',
+          'clock_in': attendance['clock_in'],
+          'clock_out': attendance['clock_out'],
+          'status': dbStatus == 'absent' ? 'Absent' : 'Present',
+          'raw_status': rawStatus,
+          'overtime_minutes': attendance['overtime_minutes'],
+        });
+      }
+    }
+
+    // Sort descending so the most recent shifts appear at the top
+    finalReport.sort((a, b) {
+      final timeA = a['expected_start'] ?? a['clock_in'] ?? '0';
+      final timeB = b['expected_start'] ?? b['clock_in'] ?? '0';
+      return timeB.compareTo(timeA);
+    });
+
+    return finalReport;
+  }
+
+  // --- EXPENSE CATEGORIES ---
+
+  Future<List<Map<String, dynamic>>> getExpenseCategories() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final response = await _supabase
+        .from('expenses_category')
+        .select()
+        .eq('tenant_id', profile['tenant_id'])
+        .order('category_name', ascending: true);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> addExpenseCategory(String categoryName) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception("User not logged in");
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    await _supabase.from('expenses_category').insert({
+      'tenant_id': profile['tenant_id'],
+      'category_name': categoryName.trim(),
+    });
+  }
+
+  Future<void> deleteExpenseCategory(int id) async {
+    await _supabase.from('expenses_category').delete().eq('id', id);
+  }
 
   Future<List<Map<String, dynamic>>> getCompanyAttendanceByDate(
     DateTime targetDate,
@@ -629,14 +860,14 @@ class SupabaseService {
     final scheduledRosters = await _supabase
         .from('rosters')
         .select('''
-          profile_id,
-          profiles!inner(full_name),
-          shift_templates!inner(start_time)
-        ''')
+        profile_id,
+        profiles!inner(full_name),
+        shift_templates!inner(start_time)
+      ''')
         .eq('tenant_id', tenantId)
         .eq('shift_date', dateStr);
 
-    // 2. Fetch ACTUAL clock-ins for the TARGET date
+    // 2. Fetch ACTUAL clock-ins for the TARGET date (The '*' grabs your new booleans!)
     final actualAttendance = await _supabase
         .from('attendance')
         .select('*, profiles!profile_id(full_name)')
@@ -658,8 +889,7 @@ class SupabaseService {
 
     List<Map<String, dynamic>> finalReport = [];
     Set<String> claimedAttendanceIds = {};
-    DateTime currentRealTime =
-        DateTime.now(); // Still need actual 'now' to know if a shift is 'Late' or 'Upcoming'
+    DateTime currentRealTime = DateTime.now();
 
     // 3. Process everyone who is SCHEDULED
     for (var roster in scheduledRosters) {
@@ -673,7 +903,6 @@ class SupabaseService {
       int hours = int.tryParse(timeParts[0]) ?? 0;
       int minutes = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
 
-      // Expected time is attached to the TARGET date
       final expectedStartTime = DateTime(
         targetDate.year,
         targetDate.month,
@@ -694,7 +923,7 @@ class SupabaseService {
       if (matchedRecord != null) {
         claimedAttendanceIds.add(matchedRecord['id']);
 
-        // 1. Calculate morning lateness FIRST, regardless of how they clocked out
+        // 1. Calculate lateness
         final actualClockIn = DateTime.parse(
           matchedRecord['clock_in'],
         ).toLocal();
@@ -703,32 +932,44 @@ class SupabaseService {
             .inMinutes;
         final bool isLate = minutesLate > 0;
 
-        // 2. Grab the REAL status saved during clock-out (the departure status)
-        String dbStatus = matchedRecord['status'] ?? 'active';
-        String displayStatus = 'Present';
+        // 2. Extract DB Statuses & Booleans from your schema
+        final String dbStatus =
+            matchedRecord['status']?.toString().toLowerCase() ?? 'active';
+        final bool isOt = matchedRecord['is_overtime'] == true;
+        final bool otApproved = matchedRecord['overtime_approved'] == true;
+        final bool earlyLeaveApproved =
+            matchedRecord['early_leave_approved'] == true;
 
-        // 3. Smart Merge: Combine Arrival and Departure states for the UI
-        if (dbStatus == 'active' || dbStatus == 'completed') {
+        // 3. Determine 'raw_status' for the UI Filters (Overtime, Early Leave)
+        String rawStatus = dbStatus;
+        if (isOt && !otApproved) {
+          rawStatus = 'overtime_pending';
+        } else if (dbStatus == 'early_leave_pending' && !earlyLeaveApproved) {
+          rawStatus = 'early_leave_pending';
+        }
+
+        // 4. Determine strict 'status' for the UI Summary Counters (MUST be Present, Late, or Absent)
+        String displayStatus;
+        if (dbStatus == 'absent') {
+          displayStatus = 'Absent';
+        } else {
           displayStatus = isLate ? 'Late' : 'Present';
-        } else if (dbStatus == 'early_leave_pending') {
-          displayStatus = isLate ? 'Late & Early Leave' : 'Early Leave Pending';
-        } else if (dbStatus == 'overtime_pending') {
-          displayStatus = isLate ? 'Late & Overtime' : 'Overtime Pending';
         }
 
         finalReport.add({
-          'id':
-              matchedRecord['id'], // 🚀 CRUCIAL: We need the ID for the Approve buttons!
+          'id': matchedRecord['id'],
           'name': employeeName,
           'clock_in': matchedRecord['clock_in'],
           'clock_out': matchedRecord['clock_out'],
-          'status': displayStatus, // e.g., "Late & Early Leave"
-          'raw_status': dbStatus, // Keep the raw DB string for your UI logic
-          'is_late': isLate, // 🚀 For your summary boxes!
+          'status':
+              displayStatus, // 🚀 Perfectly feeds the top summary counters
+          'raw_status':
+              rawStatus, // 🚀 Perfectly feeds the filter pills and UI badges
+          'is_late': isLate,
           'expected_start': expectedStartTime.toIso8601String(),
+          'overtime_minutes': matchedRecord['overtime_minutes'],
         });
       } else {
-        // If the current actual time has passed the expected time, they are absent.
         String status = currentRealTime.isAfter(expectedStartTime)
             ? 'Absent'
             : 'Upcoming';
@@ -738,18 +979,34 @@ class SupabaseService {
           'clock_out': null,
           'expected_start': expectedStartTime.toIso8601String(),
           'status': status,
+          'raw_status': status.toLowerCase(),
         });
       }
     }
 
-    // 4. Process Walk-ins
+    // 4. Process Walk-ins (Ensuring they also get checked for Overtime!)
     for (var attendance in actualAttendance) {
       if (!claimedAttendanceIds.contains(attendance['id'])) {
+        final String dbStatus =
+            attendance['status']?.toString().toLowerCase() ?? 'active';
+        final bool isOt = attendance['is_overtime'] == true;
+        final bool otApproved = attendance['overtime_approved'] == true;
+
+        String rawStatus = dbStatus;
+        if (isOt && !otApproved) {
+          rawStatus = 'overtime_pending';
+        } else if (dbStatus == 'early_leave_pending') {
+          rawStatus = 'early_leave_pending';
+        }
+
         finalReport.add({
+          'id': attendance['id'],
           'name': attendance['profiles']?['full_name'] ?? 'Unknown Employee',
           'clock_in': attendance['clock_in'],
           'clock_out': attendance['clock_out'],
-          'status': 'Present',
+          'status': dbStatus == 'absent' ? 'Absent' : 'Present',
+          'raw_status': rawStatus,
+          'overtime_minutes': attendance['overtime_minutes'],
         });
       }
     }
@@ -1912,10 +2169,10 @@ class SupabaseService {
     required String profileId,
     required String payrollType,
     required double baseRate,
-    required List<Map<String, dynamic>>
-    structuredDeductions, // 🚀 Now accepts the array!
+    required List<Map<String, dynamic>> structuredDeductions,
     double allowances = 0.0,
     double overtimeMultiplier = 1.5,
+    String? taxNumber,
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
@@ -1926,6 +2183,7 @@ class SupabaseService {
         .eq('id', user.id)
         .single();
 
+    // A. Save the payroll math to salary_configs (REMOVED tax_number from here)
     await _supabase.from('salary_configs').upsert({
       'profile_id': profileId,
       'tenant_id': profile['tenant_id'],
@@ -1934,14 +2192,21 @@ class SupabaseService {
           ? 'hourly'
           : 'monthly',
       'base_rate': baseRate,
-      'default_deductions':
-          structuredDeductions, // 🚀 Saves directly to JSONB column
+      'default_deductions': structuredDeductions,
       'default_allowances': allowances,
       'overtime_multiplier': overtimeMultiplier,
     });
+
+    // B. Save the Tax Number to the profiles table!
+    if (taxNumber != null) {
+      await _supabase
+          .from('profiles')
+          .update({'tax_number': taxNumber.trim()})
+          .eq('id', profileId);
+    }
   }
 
-  // 2. Fetch Employee Payroll Overview (For the main SalaryScreen list)
+  // 2. Fetch Employee Payroll Overview
   Future<List<Map<String, dynamic>>> getPayrollOverview() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
@@ -1957,6 +2222,7 @@ class SupabaseService {
         .select('''
           id,
           full_name,
+          tax_number,
           salary_configs (
             payroll_type,
             base_rate,
@@ -1969,18 +2235,21 @@ class SupabaseService {
 
     return List<Map<String, dynamic>>.from(
       response.map((emp) {
-        final config = emp['salary_configs'] != null
-            ? emp['salary_configs'] as Map<String, dynamic>
-            : null;
+        Map<String, dynamic>? config;
+        final rawConfigs = emp['salary_configs'];
 
-        double gross = config?['base_rate'] != null
-            ? (config!['base_rate'] as num).toDouble()
-            : 0.0;
-        double allowances = config?['default_allowances'] != null
-            ? (config!['default_allowances'] as num).toDouble()
-            : 0.0;
+        if (rawConfigs is List && rawConfigs.isNotEmpty) {
+          config = rawConfigs[0] as Map<String, dynamic>;
+        } else if (rawConfigs is Map) {
+          config = rawConfigs as Map<String, dynamic>;
+        }
 
-        // 🚀 DYNAMIC DEDUCTIONS MATH FOR THE OVERVIEW
+        double gross =
+            double.tryParse(config?['base_rate']?.toString() ?? '0') ?? 0.0;
+        double allowances =
+            double.tryParse(config?['default_allowances']?.toString() ?? '0') ??
+            0.0;
+
         double totalComputedDeductions = 0.0;
         final rawDeductionsList =
             config?['default_deductions'] as List<dynamic>? ?? [];
@@ -2003,12 +2272,15 @@ class SupabaseService {
           'grossSalary': gross.toStringAsFixed(2),
           'netSalary': netSalary.toStringAsFixed(2),
           'allowances': allowances,
-          'rawDeductions':
-              rawDeductionsList, // 🚀 Pass raw array to UI for the Edit Screen
+          'rawDeductions': rawDeductionsList,
+          'taxNumber':
+              emp['tax_number'] ?? '', // 🚀 GRAB IT FROM THE PROFILE ROOT
         };
       }),
     );
   }
+
+  // 2. Fetch Employee Payroll Overview (For the main SalaryScreen list)
 
   // Add a manual Bonus or Deduction to an employee's payslip items
   Future<void> addManualPayslipItem({
@@ -2304,16 +2576,17 @@ class SupabaseService {
   }
 
   // 2. Add an expense (DB Trigger subtracts from balance automatically!)
+  // 🚀 UPDATED: Now accepts 'category' instead of 'payee'
   Future<void> addExpense({
     required String accountId,
-    required String payee,
+    required String category,
     required double amount,
     required String date,
     String? paymentMethod,
     String? ref,
   }) async {
     final user = _supabase.auth.currentUser;
-    if (user == null) throw Exception("Not logged in");
+    if (user == null) throw Exception("User not logged in");
 
     final profile = await _supabase
         .from('profiles')
@@ -2323,13 +2596,40 @@ class SupabaseService {
 
     await _supabase.from('expenses').insert({
       'tenant_id': profile['tenant_id'],
+      'profile_id': user.id,
       'account_id': accountId,
-      'payee': payee,
+      'payee':
+          category, // 🚀 FIX: Save the category string into the existing payee column
       'amount': amount,
       'expense_date': date,
-      'payment_method': paymentMethod ?? 'Other',
-      'ref': ref ?? '-',
+      'payment_method': paymentMethod,
+      'ref': ref,
+      'status': 'Pending',
     });
+  }
+
+  // 🚀 NEW: Fetches ALL expenses for the Unified Tab view
+  Future<List<Map<String, dynamic>>> getAllTenantExpenses() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final response = await _supabase
+        .from('expenses')
+        .select('''
+          *,
+          accounts(name),
+          profiles(full_name)
+        ''')
+        .eq('tenant_id', profile['tenant_id'])
+        .order('expense_date', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response);
   }
 
   // 3. Delete an expense
@@ -3921,6 +4221,159 @@ class SupabaseService {
         message:
             "Your manager has finalized your appraisal. Tap to view your score and feedback.",
       );
+    }
+  }
+
+  // Add this inside supabase_service.dart
+  // Add this inside supabase_service.dart
+  Future<List<Map<String, dynamic>>> getManagerReport({
+    required String tenantId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      // 1. Get the raw stats (hours, lates, leave days) from the SQL engine
+      final response = await Supabase.instance.client.rpc(
+        'generate_manager_report',
+        params: {
+          'p_tenant_id': tenantId,
+          'p_start_date': startDate.toIso8601String().split('T')[0],
+          'p_end_date': endDate.toIso8601String().split('T')[0],
+        },
+      );
+
+      List<Map<String, dynamic>> rawReport = List<Map<String, dynamic>>.from(
+        response,
+      );
+
+      // 2. 🚀 THE FIX: Fetch profiles WITH their complex salary configurations
+      final profilesResponse = await Supabase.instance.client
+          .from('profiles')
+          .select(
+            'id, full_name, salary_configs(base_rate, pay_type, default_allowances, default_deductions)',
+          )
+          .eq('tenant_id', tenantId);
+
+      final profiles = List<Map<String, dynamic>>.from(profilesResponse);
+
+      // 3. 🚀 THE FIX: Fetch manual payslip adjustments (Bonuses/Deductions) for the date range
+      final payslipItemsResponse = await Supabase.instance.client
+          .from('payslip_items')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .gte(
+            'created_at',
+            DateTime(
+              startDate.year,
+              startDate.month,
+              startDate.day,
+            ).toUtc().toIso8601String(),
+          )
+          .lte(
+            'created_at',
+            DateTime(
+              endDate.year,
+              endDate.month,
+              endDate.day,
+              23,
+              59,
+              59,
+            ).toUtc().toIso8601String(),
+          );
+
+      final payslipItems = List<Map<String, dynamic>>.from(
+        payslipItemsResponse,
+      );
+
+      // 4. Map names and overwrite the Net Pay using the true Payroll Math Engine
+      for (var row in rawReport) {
+        final profileId = row['profile_id'];
+        final match = profiles.firstWhere(
+          (p) => p['id'] == profileId,
+          orElse: () => {'full_name': 'Unknown User'},
+        );
+
+        row['employee_name'] = match['full_name'] ?? 'Unknown User';
+
+        // --- 🚀 THE FINANCIAL MATH ENGINE ---
+        double finalNetPay = 0.0;
+        final rawConfigs = match['salary_configs'];
+        Map<String, dynamic>? config;
+
+        // Safely extract the config whether it's a List or a Map
+        if (rawConfigs is List && rawConfigs.isNotEmpty) {
+          config = rawConfigs[0] as Map<String, dynamic>;
+        } else if (rawConfigs is Map) {
+          config = rawConfigs as Map<String, dynamic>;
+        }
+
+        if (config != null && config.isNotEmpty) {
+          final isHourly =
+              config['pay_type']?.toString().toLowerCase() == 'hourly';
+          final double baseRate =
+              double.tryParse(config['base_rate']?.toString() ?? '0') ?? 0.0;
+          final double allowances =
+              double.tryParse(
+                config['default_allowances']?.toString() ?? '0',
+              ) ??
+              0.0;
+
+          double grossPay = 0.0;
+
+          if (isHourly) {
+            // Leverage the total standard minutes already perfectly tallied by the RPC
+            final totalMinutes =
+                (row['total_standard_minutes'] as num?)?.toInt() ?? 0;
+            grossPay = (totalMinutes / 60.0) * baseRate;
+          } else {
+            grossPay = baseRate; // Salaried workers get their fixed base rate
+          }
+
+          // Add default allowances
+          grossPay += allowances;
+
+          // Subtract dynamic recurring deductions (e.g. Tax PAYE)
+          double computedDeductions = 0.0;
+          final rawDeductionsList =
+              config['default_deductions'] as List<dynamic>? ?? [];
+
+          for (var rule in rawDeductionsList) {
+            double val =
+                double.tryParse(rule['value']?.toString() ?? '0') ?? 0.0;
+            if (rule['type'] == 'percentage') {
+              computedDeductions += (grossPay * (val / 100));
+            } else {
+              computedDeductions += val;
+            }
+          }
+
+          finalNetPay = grossPay - computedDeductions;
+        }
+
+        // Apply manual line item adjustments (Bonuses or Penalties logged this month)
+        final userItems = payslipItems.where(
+          (item) => item['profile_id'] == profileId,
+        );
+        for (var item in userItems) {
+          double amount = (item['amount'] as num).toDouble();
+          if (item['is_deduction'] == true) {
+            finalNetPay -= amount;
+          } else {
+            finalNetPay += amount;
+          }
+        }
+
+        // Ensure payslip doesn't drop into negatives
+        if (finalNetPay < 0) finalNetPay = 0.0;
+
+        // Overwrite the inaccurate RPC value with the true calculated Net Pay!
+        row['total_net_pay'] = finalNetPay;
+      }
+
+      return rawReport;
+    } catch (e) {
+      print('Error fetching report: $e');
+      throw Exception('Failed to load report data');
     }
   }
 }

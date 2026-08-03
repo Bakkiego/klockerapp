@@ -28,157 +28,174 @@ class _SalaryScreenState extends State<SalaryScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await _service.getPayrollOverview();
-      setState(() {
-        _employees = data;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _employees = data;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint("Error fetching payroll: $e");
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        // 🚀 SHOWS THE EXACT ERROR ON SCREEN
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Database Error: $e"),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 🚀 THE BOUNCER: Check if they are allowed to manage salary configs
     final userProvider = context.watch<UserProvider>();
     final canManageSalaryConfigs = userProvider.can('manage_salary_configs');
-
-    // Grab the live currency symbol from settings!
     final currency = userProvider.currencySymbol;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Manage Employee Salary')),
-
       body: Column(
         children: [
-          // 1. Search Bar Area
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: SearchBar(
               hintText: "Search by Name or ID...",
               trailing: [
                 IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.sort),
-                ), // Sort Icon
+                IconButton(onPressed: () {}, icon: const Icon(Icons.sort)),
               ],
             ),
           ),
 
-          // 2. The Scrollable List of Employee Cards
+          // 🚀 THE FIX: Handles Loading and Empty States Correctly
           Expanded(
-            child: ListView.builder(
-              itemCount: _employees.length,
-              itemBuilder: (context, index) {
-                final employee = _employees[index];
-                final String rawId = employee['id']?.toString() ?? '';
-                final String displayId = rawId.length > 5
-                    ? '${rawId.substring(0, 5)}...'
-                    : rawId;
-
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EmployeeSalaryDetailScreen(
-                          employeeDetails: employee,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8.0,
-                      vertical: 4.0,
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF00A36C)),
+                  )
+                : _employees.isEmpty
+                ? const Center(
+                    child: Text(
+                      "No employees or data found.",
+                      style: TextStyle(color: Colors.grey),
                     ),
-                    child: Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Left Side: Name, ID, Payroll Type
-                            Expanded(
-                              child: Column(
+                  )
+                : ListView.builder(
+                    itemCount: _employees.length,
+                    itemBuilder: (context, index) {
+                      final employee = _employees[index];
+                      final String rawId = employee['id']?.toString() ?? '';
+                      final String displayId = rawId.length > 5
+                          ? '${rawId.substring(0, 5)}...'
+                          : rawId;
+
+                      return GestureDetector(
+                        onTap: () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EmployeeSalaryDetailScreen(
+                                employeeDetails: employee,
+                              ),
+                            ),
+                          );
+                          if (result == true) {
+                            _fetchPayrollData();
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8.0,
+                            vertical: 4.0,
+                          ),
+                          child: Card(
+                            elevation: 2,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    employee['name']!,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          employee['name']!,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'ID: #$displayId',
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Chip(
+                                          label: Text(employee['payrollType']!),
+                                          padding: EdgeInsets.zero,
+                                          labelStyle: const TextStyle(
+                                            fontSize: 12,
+                                          ),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'ID: #$displayId',
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  // Chip for Payroll Type
-                                  Chip(
-                                    label: Text(employee['payrollType']!),
-                                    padding: EdgeInsets.zero,
-                                    labelStyle: const TextStyle(fontSize: 12),
-                                    backgroundColor: Colors.green,
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      const Text(
+                                        "NET SALARY",
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        "$currency${employee['netSalary']!}",
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 20,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-
-                            // Right Side: Net Salary
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                const Text(
-                                  "NET SALARY",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  "$currency${employee['netSalary']!}",
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 20,
-                                    color: Colors.green, // Income/Salary color
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
-
-      // 🚀 GRANULAR SECURITY: Hide the FAB if they lack the configuration permission
       floatingActionButton: canManageSalaryConfigs
           ? FloatingActionButton(
               heroTag: null,
               onPressed: () async {
-                await Navigator.push(
+                final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const AddSalaryRateScreen(),
                   ),
                 );
-                _fetchPayrollData();
+                if (result == true) {
+                  _fetchPayrollData();
+                }
               },
               child: const Icon(Icons.person_add),
             )
