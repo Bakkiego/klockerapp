@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Represents a single message
 class Message {
   final String text;
-  final bool isUser; // True if message is from the current user
+  final bool isUser;
   final DateTime time;
 
   Message({required this.text, required this.isUser, required this.time});
 }
 
 class ChatScreen extends StatefulWidget {
-  final String recipientName;
+  final String? recipientName;
+  final String? roomId;
 
-  const ChatScreen({super.key, required this.recipientName});
+  const ChatScreen({super.key, this.recipientName, this.roomId});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -21,42 +22,157 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final supabase = Supabase.instance.client;
 
-  // Mock message history
-  final List<Message> _messages = [
-    Message(
-      text: "Hi! How's the project tracking going?",
-      isUser: false, // Initial message from the recipient
-      time: DateTime.now().subtract(const Duration(minutes: 8)),
-    ),
-    Message(
-      text:
-          "Everything looks good on my end. I'm finalizing the Q3 report now.",
-      isUser: true,
-      time: DateTime.now().subtract(const Duration(minutes: 5)),
-    ),
-    Message(
-      text: "Great! Let me know when you drop it in the shared drive.",
-      isUser: false,
-      time: DateTime.now().subtract(const Duration(minutes: 3)),
-    ),
-  ];
+  List<Message> _messages = [];
+  bool _isLoading = false;
+  late final String _currentUserId;
+  RealtimeChannel? _chatChannel;
 
-  void _handleSubmitted(String text) {
-    if (text.trim().isEmpty) return;
+  @override
+  void initState() {
+    super.initState();
+    _currentUserId = supabase.auth.currentUser!.id;
+    if (widget.roomId != null) {
+      _initChat(widget.roomId!);
+    }
+  }
 
-    setState(() {
-      _messages.add(
-        Message(
-          text: text,
-          isUser: true, // New message is always from the current user
-          time: DateTime.now(),
-        ),
-      );
-    });
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.roomId != oldWidget.roomId) {
+      if (_chatChannel != null) {
+        supabase.removeChannel(_chatChannel!);
+      }
+      if (widget.roomId != null) {
+        setState(() => _isLoading = true);
+        _initChat(widget.roomId!);
+      } else {
+        setState(() {
+          _messages = [];
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _initChat(String roomId) {
+    _loadMessageHistory(roomId);
+    _setupRealtimeSubscription(roomId);
+  }
+
+  Future<void> _loadMessageHistory(String roomId) async {
+    try {
+      final data = await supabase
+          .from('decrypted_chat_messages')
+          .select()
+          .eq('room_id', roomId)
+          .order('created_at', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _messages = data
+              .map<Message>(
+                (row) => Message(
+                  text: row['message_body'] ?? '',
+                  isUser: row['sender_id'] == _currentUserId,
+                  time: DateTime.parse(row['created_at']).toLocal(),
+                ),
+              )
+              .toList();
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      debugPrint('Error loading history: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _setupRealtimeSubscription(String roomId) {
+    _chatChannel = supabase
+        .channel('public:chat_messages:room_id=eq.$roomId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'chat_messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'room_id',
+            value: roomId,
+          ),
+          callback: (payload) async {
+            final newRow = payload.newRecord;
+            if (newRow['sender_id'] == _currentUserId) return;
+
+            final decryptedData = await supabase
+                .from('decrypted_chat_messages')
+                .select('message_body, created_at')
+                .eq('id', newRow['id'])
+                .single();
+
+            if (mounted) {
+              setState(() {
+                _messages.add(
+                  Message(
+                    text: decryptedData['message_body'],
+                    isUser: false,
+                    time: DateTime.parse(decryptedData['created_at']).toLocal(),
+                  ),
+                );
+              });
+              _scrollToBottom();
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  Future<void> _handleSubmitted(String text) async {
+    if (text.trim().isEmpty || widget.roomId == null) return;
+    final messageText = text.trim();
     _textController.clear();
 
-    // Scroll to the latest message after the widget has been rebuilt
+    // Optimistic Update
+    final tempMessage = Message(
+      text: messageText,
+      isUser: true,
+      time: DateTime.now(),
+    );
+    setState(() {
+      _messages.add(tempMessage);
+    });
+    _scrollToBottom();
+
+    try {
+      // 🚨 NOTE: Check if your database column is named 'message_text' or 'message_body'
+      await supabase.from('chat_messages').insert({
+        'room_id': widget.roomId,
+        'sender_id': _currentUserId,
+        'message_text': messageText,
+      });
+    } catch (error) {
+      debugPrint('Send error: $error');
+      if (mounted) {
+        // Show the exact database error on screen!
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to send: $error"),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        // Remove the fake message from the screen
+        setState(() {
+          _messages.remove(tempMessage);
+        });
+      }
+    }
+  }
+
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -70,6 +186,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    if (_chatChannel != null) supabase.removeChannel(_chatChannel!);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -77,65 +194,123 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.recipientName)),
-      body: Column(
-        children: [
-          // 1. Message List Area
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              itemCount: _messages.length,
-              itemBuilder: (_, index) =>
-                  _MessageBubble(message: _messages[index]),
-            ),
+    if (widget.roomId == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF13151A),
+        body: Center(
+          child: Text(
+            'Select a conversation to start chatting',
+            style: TextStyle(color: Colors.white54, fontSize: 16),
           ),
-          const Divider(height: 1.0),
+        ),
+      );
+    }
 
-          // 2. Message Input Area
-          Container(
-            decoration: BoxDecoration(color: Theme.of(context).cardColor),
-            child: _buildTextComposer(),
+    return Scaffold(
+      backgroundColor: const Color(0xFF13151A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF13151A),
+        elevation: 0,
+        title: Text(widget.recipientName ?? 'Chat'),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            children: [
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(8.0),
+                        itemCount: _messages.length,
+                        itemBuilder: (_, index) =>
+                            _MessageBubble(message: _messages[index]),
+                      ),
+              ),
+              Container(
+                decoration: const BoxDecoration(color: Color(0xFF13151A)),
+                child: _buildTextComposer(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // Input Field Composer
   Widget _buildTextComposer() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      color: Colors.transparent,
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Attachment Button
-          IconButton(
-            icon: const Icon(Icons.attach_file, color: Colors.grey),
-            onPressed: () {
-              // TODO: Handle file attachment
-            },
-          ),
-          // Text Input Field
-          Flexible(
-            child: TextField(
-              controller: _textController,
-              onSubmitted: _handleSubmitted,
-              decoration: const InputDecoration.collapsed(
-                hintText: "Send a message...",
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 4.0,
               ),
-              textCapitalization: TextCapitalization.sentences,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2329),
+                borderRadius: BorderRadius.circular(30.0),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.sentiment_satisfied_alt,
+                    color: Colors.grey[500],
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      onSubmitted: _handleSubmitted,
+                      minLines: 1,
+                      maxLines: 5,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      decoration: const InputDecoration(
+                        hintText: "Type a message here...",
+                        hintStyle: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      textCapitalization: TextCapitalization.sentences,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.attach_file_rounded,
+                    color: Colors.grey[500],
+                    size: 22,
+                  ),
+                ],
+              ),
             ),
           ),
-          // Send Button
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4.0),
-            child: IconButton(
-              icon: Icon(
-                Icons.send,
-                color: Theme.of(context).colorScheme.primary,
+          const SizedBox(width: 12),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2.0),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF00A36C),
+                shape: BoxShape.circle,
               ),
-              onPressed: () => _handleSubmitted(_textController.text),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.send_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                onPressed: () => _handleSubmitted(_textController.text),
+              ),
             ),
           ),
         ],
@@ -144,7 +319,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// Custom Widget for a single message bubble
 class _MessageBubble extends StatelessWidget {
   final Message message;
 
@@ -155,57 +329,48 @@ class _MessageBubble extends StatelessWidget {
     final bool isUser = message.isUser;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        children: [
-          // Message Bubble
-          Container(
-            constraints: BoxConstraints(
-              maxWidth:
-                  MediaQuery.of(context).size.width * 0.75, // Max 75% width
-            ),
-            padding: const EdgeInsets.all(12.0),
-            decoration: BoxDecoration(
-              color: isUser ? primaryColor : Colors.grey.shade200,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16.0),
-                topRight: const Radius.circular(16.0),
-                // Point the corner towards the avatar/edge
-                bottomLeft: isUser
-                    ? const Radius.circular(16.0)
-                    : const Radius.circular(4.0),
-                bottomRight: isUser
-                    ? const Radius.circular(4.0)
-                    : const Radius.circular(16.0),
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
+        constraints: const BoxConstraints(maxWidth: 480),
+        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+        decoration: BoxDecoration(
+          color: isUser ? primaryColor : Colors.grey.shade900,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16.0),
+            topRight: const Radius.circular(16.0),
+            bottomLeft: isUser
+                ? const Radius.circular(16.0)
+                : const Radius.circular(4.0),
+            bottomRight: isUser
+                ? const Radius.circular(4.0)
+                : const Radius.circular(16.0),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: isUser
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Text(
+              message.text,
+              style: TextStyle(
+                color: isUser ? Colors.white : Colors.white70,
+                fontSize: 15.0,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  message.text,
-                  style: TextStyle(
-                    color: isUser ? Colors.white : Colors.black87,
-                    fontSize: 15.0,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  // Format time to HH:MM
-                  '${message.time.hour.toString().padLeft(2, '0')}:${message.time.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    fontSize: 10.0,
-                    color: isUser ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 4),
+            Text(
+              '${message.time.hour.toString().padLeft(2, '0')}:${message.time.minute.toString().padLeft(2, '0')}',
+              style: TextStyle(
+                fontSize: 10.0,
+                color: isUser ? Colors.white70 : Colors.white54,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -12,6 +12,7 @@ import '../Employee_App/employee_menu.dart';
 import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 
+import '../screens/chat_dashboard.dart';
 import 'notifications_screen.dart';
 
 class BottomNav extends StatefulWidget {
@@ -69,7 +70,7 @@ class _BottomNavState extends State<BottomNav> {
       widget.role == userRole.Employee
           ? const EmployeeHomeScreen()
           : const HomeScreen(),
-      const InboxList(),
+      ChatDashboard(),
       if (canSeeSchedule) const Calendar(),
       _getMenuScreen(), // Used natively by mobile layout shell
     ];

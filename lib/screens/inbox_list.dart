@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
-import 'inbox.dart'; // Target chat timeline view
 
 class InboxList extends StatefulWidget {
-  const InboxList({super.key});
+  final Function(String roomId, String recipientName)? onChatTap;
+
+  const InboxList({super.key, this.onChatTap});
 
   @override
   State<InboxList> createState() => _InboxListState();
@@ -31,7 +32,6 @@ class _InboxListState extends State<InboxList> {
     }
   }
 
-  // 🚀 BULLETPROOF NEW CHAT MAKER
   void _showNewChatSheet() async {
     showModalBottomSheet(
       context: context,
@@ -125,11 +125,15 @@ class _InboxListState extends State<InboxList> {
                                   'Staff',
                             ),
                             onTap: () async {
-                              Navigator.pop(context); // Close bottom sheet
+                              final nav = Navigator.of(context);
+                              final scaffoldMessenger = ScaffoldMessenger.of(
+                                context,
+                              );
 
-                              // Show spinner loader
+                              nav.pop();
+
                               showDialog(
-                                context: context,
+                                context: this.context,
                                 barrierDismissible: false,
                                 builder: (ctx) => const Center(
                                   child: CircularProgressIndicator(
@@ -139,7 +143,6 @@ class _InboxListState extends State<InboxList> {
                               );
 
                               try {
-                                // 1. Grab all rooms where current user is participating
                                 final roomsResponse = await Supabase
                                     .instance
                                     .client
@@ -151,7 +154,6 @@ class _InboxListState extends State<InboxList> {
 
                                 String? existingRoomId;
 
-                                // 2. Check locally if a room exists with the selected employee
                                 for (var room in roomsResponse) {
                                   if (room['user_one'] == employee['id'] ||
                                       room['user_two'] == employee['id']) {
@@ -162,7 +164,6 @@ class _InboxListState extends State<InboxList> {
 
                                 String finalRoomId;
 
-                                // 3. If room doesn't exist, create it safely
                                 if (existingRoomId != null) {
                                   finalRoomId = existingRoomId;
                                 } else {
@@ -171,39 +172,29 @@ class _InboxListState extends State<InboxList> {
                                       .insert({
                                         'user_one': currentUserId,
                                         'user_two': employee['id'],
-                                        'tenant_id':
-                                            employee['tenant_id'], // Safely assigns matching workspace context
+                                        'tenant_id': employee['tenant_id'],
                                       })
                                       .select('id')
                                       .single();
                                   finalRoomId = newRoom['id'];
                                 }
 
-                                if (context.mounted) {
-                                  Navigator.pop(
-                                    context,
-                                  ); // Dismiss loading spinner safely!
+                                if (this.context.mounted) {
+                                  nav.pop();
 
-                                  // Navigate straight into the chat view
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => Inbox(
-                                        roomId: finalRoomId,
-                                        recipientName:
-                                            employee['full_name'] ??
-                                            'Co-worker',
-                                      ),
-                                    ),
-                                  );
-                                  _loadInbox(); // Refresh main history loop when backing out
+                                  // Instantly update the right pane view
+                                  if (widget.onChatTap != null) {
+                                    widget.onChatTap!(
+                                      finalRoomId,
+                                      employee['full_name'] ?? 'Co-worker',
+                                    );
+                                  }
+                                  _loadInbox();
                                 }
                               } catch (e) {
-                                if (context.mounted) {
-                                  Navigator.pop(
-                                    context,
-                                  ); // Dismiss spinner on fail
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                if (this.context.mounted) {
+                                  nav.pop();
+                                  scaffoldMessenger.showSnackBar(
                                     SnackBar(
                                       content: Text("Error launching chat: $e"),
                                       backgroundColor: Colors.red,
@@ -353,22 +344,34 @@ class _InboxListState extends State<InboxList> {
                                     ),
                                 ],
                               ),
-                              onTap: () async {
-                                await SupabaseService().markMessagesAsRead(
-                                  conv['room_id'],
-                                );
-                                if (context.mounted) {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => Inbox(
-                                        roomId: conv['room_id'],
-                                        recipientName: conv['name'],
-                                      ),
-                                    ),
+                              onTap: () {
+                                if (widget.onChatTap != null) {
+                                  widget.onChatTap!(
+                                    conv['room_id'],
+                                    conv['name'],
                                   );
-                                  _loadInbox();
                                 }
+
+                                SupabaseService()
+                                    .markMessagesAsRead(conv['room_id'])
+                                    .then((_) {
+                                      if (mounted) _loadInbox();
+                                    })
+                                    .catchError((e) {
+                                      // Show the error on screen!
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              "Could not mark as read: $e",
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    });
                               },
                             ),
                           ),

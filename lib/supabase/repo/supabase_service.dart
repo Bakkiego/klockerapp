@@ -3423,15 +3423,18 @@ class SupabaseService {
             : room['user_one_profile'];
 
         // Get the single latest message preview for this room
+        // 🚀 THE FIX: Query the decrypted view, and fetch 'message_body' instead of 'message_text'
         final latestMsgRes = await _supabase
-            .from('chat_messages')
-            .select('message_text, created_at, is_read, sender_id')
+            .from('decrypted_chat_messages') // <-- Changed from chat_messages
+            .select(
+              'message_body, created_at, is_read, sender_id',
+            ) // <-- Changed to message_body
             .eq('room_id', room['id'])
             .order('created_at', ascending: false)
             .limit(1)
             .maybeSingle();
 
-        // Count unread items sent by the counterparty
+        // Count unread items sent by the counterparty (this can still hit the base table)
         final unreadCountRes = await _supabase
             .from('chat_messages')
             .select('id')
@@ -3446,8 +3449,9 @@ class SupabaseService {
           'name': recipientProfile['full_name'] ?? 'Co-worker',
           'avatar_url': recipientProfile['avatar_url'],
           'job_title': recipientProfile['job_title'] ?? 'Staff',
+          // 🚀 THE FIX: Assign the decrypted body here
           'lastMessage':
-              latestMsgRes?['message_text'] ?? 'Tap to start chatting!',
+              latestMsgRes?['message_body'] ?? 'Tap to start chatting!',
           'time': latestMsgRes?['created_at'] != null
               ? DateTime.parse(latestMsgRes?['created_at'])
               : DateTime.parse(room['updated_at']),
