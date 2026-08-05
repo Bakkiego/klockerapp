@@ -85,7 +85,7 @@ flutter:
   assets:
     - images/
     - images/user.jpeg
-    - .env
+    - config.env
 
   fonts:
 #     - family: Yrsa

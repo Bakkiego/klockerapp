@@ -19,7 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "config.env");
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUri,
     anonKey: SupabaseConfig.supabaseAnon,
