@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 
 class InboxList extends StatefulWidget {
   final Function(String roomId, String recipientName)? onChatTap;
@@ -15,11 +17,41 @@ class InboxList extends StatefulWidget {
 class _InboxListState extends State<InboxList> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _conversations = [];
+  RealtimeChannel? _inboxChannel;
 
   @override
   void initState() {
     super.initState();
     _loadInbox();
+    _subscribeToUpdates();
+  }
+
+  void _subscribeToUpdates() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    _inboxChannel = Supabase.instance.client
+        .channel(
+          'inbox_updates_${DateTime.now().millisecondsSinceEpoch}',
+        ) // unique name, avoids any collision with a stale channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'chat_messages',
+          callback: (payload) {
+            debugPrint('📬 Inbox realtime event fired: ${payload.newRecord}');
+            if (mounted) _loadInbox();
+          },
+        )
+        .subscribe((status, [error]) {
+          debugPrint('📡 Inbox channel status: $status ${error ?? ""}');
+        });
+  }
+
+  @override
+  void dispose() {
+    _inboxChannel?.unsubscribe();
+    super.dispose();
   }
 
   Future<void> _loadInbox() async {
@@ -221,6 +253,7 @@ class _InboxListState extends State<InboxList> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final chatReady = context.watch<UserProvider>().isChatReady; // 🚀 new
 
     return Scaffold(
       appBar: AppBar(
@@ -229,7 +262,22 @@ class _InboxListState extends State<InboxList> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      body: _isLoading
+      body:
+          !chatReady // 🚀 new
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF00A36C)),
+                  SizedBox(height: 16),
+                  Text(
+                    'Setting up secure chat…',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            )
+          : _isLoading
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF00A36C)),
             )
@@ -358,7 +406,6 @@ class _InboxListState extends State<InboxList> {
                                       if (mounted) _loadInbox();
                                     })
                                     .catchError((e) {
-                                      // Show the error on screen!
                                       if (mounted) {
                                         ScaffoldMessenger.of(
                                           context,

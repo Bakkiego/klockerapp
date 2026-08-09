@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 
 class Inbox extends StatefulWidget {
   final String? roomId;
@@ -19,17 +21,13 @@ class _InboxState extends State<Inbox> {
   final String _currentUserId =
       Supabase.instance.client.auth.currentUser?.id ?? '';
 
-  // 🚀 THE FIX: Create a stable variable to hold the stream connection
   Stream<List<Map<String, dynamic>>>? _messagesStream;
 
   @override
   void initState() {
     super.initState();
-    // Mark everything read safely if roomId is available
     if (widget.roomId != null) {
       SupabaseService().markMessagesAsRead(widget.roomId!);
-
-      // 🚀 THE FIX: Initialize the stream ONCE right here.
       _messagesStream = SupabaseService().getLiveMessagesStream(widget.roomId!);
     }
   }
@@ -57,7 +55,6 @@ class _InboxState extends State<Inbox> {
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      // Delay slightly to ensure list is built before scrolling
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
@@ -74,6 +71,7 @@ class _InboxState extends State<Inbox> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final chatReady = context.watch<UserProvider>().isChatReady; // 🚀 new
 
     return Scaffold(
       appBar: AppBar(
@@ -83,185 +81,209 @@ class _InboxState extends State<Inbox> {
         ),
         centerTitle: false,
       ),
-      body: Column(
-        children: [
-          // --- 🚀 REAL-TIME STREAMING TIMELINE ---
-          Expanded(
-            child: widget.roomId == null || _messagesStream == null
-                ? const Center(
-                    child: Text(
-                      "No messages yet. Say hi! 👋",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                : StreamBuilder<List<Map<String, dynamic>>>(
-                    // 🚀 THE FIX: Feed it the stable memory variable!
-                    stream: _messagesStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text("Error loading chats: ${snapshot.error}"),
-                        );
-                      }
-                      if (!snapshot.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF00A36C),
-                          ),
-                        );
-                      }
-
-                      final messages = snapshot.data!;
-
-                      // Auto scroll to bottom when new messages stream down
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _scrollToBottom(),
-                      );
-
-                      if (messages.isEmpty) {
-                        return const Center(
+      body: !chatReady // 🚀 new — replaces the whole body while chat isn't ready
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF00A36C)),
+                  SizedBox(height: 16),
+                  Text(
+                    'Setting up secure chat…',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                Expanded(
+                  child: widget.roomId == null || _messagesStream == null
+                      ? const Center(
                           child: Text(
                             "No messages yet. Say hi! 👋",
                             style: TextStyle(color: Colors.grey),
                           ),
-                        );
-                      }
+                        )
+                      : StreamBuilder<List<Map<String, dynamic>>>(
+                          stream: _messagesStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Text(
+                                  "Error loading chats: ${snapshot.error}",
+                                ),
+                              );
+                            }
+                            if (!snapshot.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF00A36C),
+                                ),
+                              );
+                            }
 
-                      return ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = messages[index];
-                          final bool isMe = msg['sender_id'] == _currentUserId;
+                            final messages = snapshot.data!;
 
-                          // Safe timestamp parsing
-                          String timeStr = '';
-                          if (msg['created_at'] != null) {
-                            timeStr = DateFormat(
-                              'h:mm a',
-                            ).format(DateTime.parse(msg['created_at']));
-                          }
+                            WidgetsBinding.instance.addPostFrameCallback(
+                              (_) => _scrollToBottom(),
+                            );
 
-                          return Align(
-                            alignment: isMe
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.symmetric(
+                            if (messages.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  "No messages yet. Say hi! 👋",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              );
+                            }
+
+                            return ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(16),
+                              itemCount: messages.length,
+                              itemBuilder: (context, index) {
+                                final msg = messages[index];
+                                final bool isMe =
+                                    msg['sender_id'] == _currentUserId;
+
+                                String timeStr = '';
+                                if (msg['created_at'] != null) {
+                                  timeStr = DateFormat(
+                                    'h:mm a',
+                                  ).format(DateTime.parse(msg['created_at']));
+                                }
+
+                                return Align(
+                                  alignment: isMe
+                                      ? Alignment.centerRight
+                                      : Alignment.centerLeft,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    constraints: BoxConstraints(
+                                      maxWidth:
+                                          MediaQuery.of(context).size.width *
+                                          0.75,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isMe
+                                          ? const Color(0xFF00A36C)
+                                          : (isDark
+                                                ? Colors.grey[900]
+                                                : Colors.grey[200]),
+                                      borderRadius: BorderRadius.only(
+                                        topLeft: const Radius.circular(16),
+                                        topRight: const Radius.circular(16),
+                                        bottomLeft: Radius.circular(
+                                          isMe ? 16 : 0,
+                                        ),
+                                        bottomRight: Radius.circular(
+                                          isMe ? 0 : 16,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          msg['message_text'] ?? '',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            color: isMe
+                                                ? Colors.white
+                                                : (isDark
+                                                      ? Colors.white
+                                                      : Colors.black87),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Align(
+                                          alignment: Alignment.bottomRight,
+                                          child: Text(
+                                            timeStr,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isMe
+                                                  ? Colors.white.withOpacity(
+                                                      0.6,
+                                                    )
+                                                  : Colors.grey,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? theme.cardColor : Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 5,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            maxLines: null,
+                            decoration: InputDecoration(
+                              hintText: "Type a message...",
+                              hintStyle: const TextStyle(color: Colors.grey),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              filled: true,
+                              fillColor: isDark
+                                  ? Colors.grey[900]
+                                  : Colors.grey[100],
+                              contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 10,
                               ),
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.of(context).size.width * 0.75,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isMe
-                                    ? const Color(0xFF00A36C)
-                                    : (isDark
-                                          ? Colors.grey[900]
-                                          : Colors.grey[200]),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(16),
-                                  topRight: const Radius.circular(16),
-                                  bottomLeft: Radius.circular(isMe ? 16 : 0),
-                                  bottomRight: Radius.circular(isMe ? 0 : 16),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    msg['message_text'] ?? '',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      color: isMe
-                                          ? Colors.white
-                                          : (isDark
-                                                ? Colors.white
-                                                : Colors.black87),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Align(
-                                    alignment: Alignment.bottomRight,
-                                    child: Text(
-                                      timeStr,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: isMe
-                                            ? Colors.white.withOpacity(0.6)
-                                            : Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
-                          );
-                        },
-                      );
-                    },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: _sendMessage,
+                          child: const CircleAvatar(
+                            radius: 22,
+                            backgroundColor: Color(0xFF00A36C),
+                            child: Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-          ),
-
-          // --- BOTTOM TEXT INPUT BAR ---
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark ? theme.cardColor : Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 5,
-                  offset: const Offset(0, -2),
                 ),
               ],
             ),
-            child: SafeArea(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      maxLines: null,
-                      decoration: InputDecoration(
-                        hintText: "Type a message...",
-                        hintStyle: const TextStyle(color: Colors.grey),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: isDark ? Colors.grey[900] : Colors.grey[100],
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _sendMessage,
-                    child: const CircleAvatar(
-                      radius: 22,
-                      backgroundColor: Color(0xFF00A36C),
-                      child: Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

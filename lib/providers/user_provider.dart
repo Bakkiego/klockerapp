@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // <-- Need this for Realtime
+import 'package:currency_picker/currency_picker.dart';
 import 'package:klockerapp/models/app_enums.dart';
 
 class UserProvider with ChangeNotifier {
@@ -24,7 +25,13 @@ class UserProvider with ChangeNotifier {
 
   // 🚀 2. NEW: Permissions Getter & UI Gatekeeper
   List<String> get permissions => _permissions;
+bool _isChatReady = false;
+bool get isChatReady => _isChatReady;
 
+void setChatReady(bool ready) {
+  _isChatReady = ready;
+  notifyListeners();
+}
   /// The magical 'can' function that controls what buttons the user sees
   bool can(String actionName) {
     if (role == userRole.Manager) {
@@ -87,6 +94,13 @@ class UserProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void setCurrencyFromCode(String code) {
+    final currency = CurrencyService().findByCode(code);
+    if (currency != null) {
+      setCurrencySymbol(currency.symbol);
+    }
+  }
+
   // --- THE REALTIME MAGIC ---
   void _listenForPlanUpgrades(String tenantId) {
     _tenantSubscription?.unsubscribe();
@@ -135,9 +149,10 @@ class UserProvider with ChangeNotifier {
     _subscriptionTier = null;
     _fullName = null;
     _companyName = null;
-
+    _isChatReady = false;
     // 🚀 4. NEW: Wipe the permissions out on logout for security
     _permissions = [];
+    _currencySymbol = 'R';
 
     notifyListeners();
   }

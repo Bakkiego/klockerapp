@@ -106,7 +106,9 @@ class _LoginScreenState extends State<LoginScreen> {
         }
         // ✅ If we get here, they are approved! Let them into the system.
         context.read<UserProvider>().setUserProfile(userData);
-
+        context.read<UserProvider>().setChatReady(
+          userData['chat_ready'] ?? true,
+        ); // 🚀 new
         // 🚀 THE NEW INJECTION: Fetch and set permissions on manual login
         final String legacyRole = userData['role'] ?? 'employee';
         final String? customRoleId = userData['custom_role_id'];

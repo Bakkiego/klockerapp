@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:klockerapp/supabase/repo/supabase_service.dart';
 
 class Message {
   final String text;
@@ -27,7 +30,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Message> _messages = [];
   bool _isLoading = false;
   late final String _currentUserId;
-  RealtimeChannel? _chatChannel;
+  StreamSubscription<List<Map<String, dynamic>>>? _messagesSub;
 
   @override
   void initState() {
@@ -42,9 +45,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void didUpdateWidget(covariant ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.roomId != oldWidget.roomId) {
-      if (_chatChannel != null) {
-        supabase.removeChannel(_chatChannel!);
-      }
+      _messagesSub?.cancel();
       if (widget.roomId != null) {
         setState(() => _isLoading = true);
         _initChat(widget.roomId!);
@@ -58,76 +59,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _initChat(String roomId) {
-    _loadMessageHistory(roomId);
-    _setupRealtimeSubscription(roomId);
-  }
-
-  Future<void> _loadMessageHistory(String roomId) async {
-    try {
-      final data = await supabase
-          .from('decrypted_chat_messages')
-          .select()
-          .eq('room_id', roomId)
-          .order('created_at', ascending: true);
-
-      if (mounted) {
-        setState(() {
-          _messages = data
-              .map<Message>(
-                (row) => Message(
-                  text: row['message_body'] ?? '',
-                  isUser: row['sender_id'] == _currentUserId,
-                  time: DateTime.parse(row['created_at']).toLocal(),
-                ),
-              )
-              .toList();
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-    } catch (e) {
-      debugPrint('Error loading history: $e');
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _setupRealtimeSubscription(String roomId) {
-    _chatChannel = supabase
-        .channel('public:chat_messages:room_id=eq.$roomId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'chat_messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) async {
-            final newRow = payload.newRecord;
-            if (newRow['sender_id'] == _currentUserId) return;
-
-            final decryptedData = await supabase
-                .from('decrypted_chat_messages')
-                .select('message_body, created_at')
-                .eq('id', newRow['id'])
-                .single();
-
-            if (mounted) {
-              setState(() {
-                _messages.add(
-                  Message(
-                    text: decryptedData['message_body'],
-                    isUser: false,
-                    time: DateTime.parse(decryptedData['created_at']).toLocal(),
-                  ),
-                );
-              });
-              _scrollToBottom();
-            }
+    setState(() => _isLoading = true);
+    _messagesSub = SupabaseService()
+        .getLiveMessagesStream(roomId)
+        .listen(
+          (rows) {
+            if (!mounted) return;
+            setState(() {
+              _messages = rows
+                  .map<Message>(
+                    (row) => Message(
+                      text: row['message_text'] ?? '',
+                      isUser: row['sender_id'] == _currentUserId,
+                      time: DateTime.parse(row['created_at']).toLocal(),
+                    ),
+                  )
+                  .toList();
+              _isLoading = false;
+            });
+            _scrollToBottom();
           },
-        )
-        .subscribe();
+          onError: (e) {
+            debugPrint('Error loading chat stream: $e');
+            if (mounted) setState(() => _isLoading = false);
+          },
+        );
   }
 
   Future<void> _handleSubmitted(String text) async {
@@ -135,7 +91,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final messageText = text.trim();
     _textController.clear();
 
-    // Optimistic Update
     final tempMessage = Message(
       text: messageText,
       isUser: true,
@@ -147,16 +102,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      // 🚨 NOTE: Check if your database column is named 'message_text' or 'message_body'
-      await supabase.from('chat_messages').insert({
-        'room_id': widget.roomId,
-        'sender_id': _currentUserId,
-        'message_text': messageText,
-      });
+      await SupabaseService().sendMessage(
+        roomId: widget.roomId!,
+        text: messageText,
+      );
     } catch (error) {
       debugPrint('Send error: $error');
       if (mounted) {
-        // Show the exact database error on screen!
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Failed to send: $error"),
@@ -164,7 +116,6 @@ class _ChatScreenState extends State<ChatScreen> {
             duration: const Duration(seconds: 4),
           ),
         );
-        // Remove the fake message from the screen
         setState(() {
           _messages.remove(tempMessage);
         });
@@ -186,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    if (_chatChannel != null) supabase.removeChannel(_chatChannel!);
+    _messagesSub?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
