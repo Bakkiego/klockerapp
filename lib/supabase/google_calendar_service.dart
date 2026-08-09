@@ -1,48 +1,52 @@
+import 'dart:async';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/calendar/v3.dart' as calendar;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:flutter/foundation.dart';
 
 class GoogleCalendarService {
-  // ==========================================
-  // 🚀 THE FIX: MAKE THIS A SINGLETON
-  // ==========================================
-  // 1. Create a private internal constructor
   GoogleCalendarService._internal();
-
-  // 2. Create the single, shared instance
   static final GoogleCalendarService _instance =
       GoogleCalendarService._internal();
+  factory GoogleCalendarService() => _instance;
 
-  // 3. Whenever a screen asks for this service, give them the shared instance!
-  factory GoogleCalendarService() {
-    return _instance;
-  }
-  // ==========================================
-
-  // The Google Sign In object will now stay alive in memory forever!
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId:
         '38329521467-9cvvi2miis1ma1a33fsiicu55i9ftmhl.apps.googleusercontent.com',
     scopes: <String>[calendar.CalendarApi.calendarEventsScope],
   );
-  // 2. Trigger the Google Login Pop-up
 
-  // 1.5 Check if user is already logged in (for when the web page refreshes)
+  bool _hasAttemptedRestore = false;
+
+  /// Identity only — is a Google account signed in at all? Used by the
+  /// Settings screen and to gate whether "Connect Now" can proceed.
+  bool get isConnected => _googleSignIn.currentUser != null;
+
+  Stream<GoogleSignInAccount?> get onAuthChanged =>
+      _googleSignIn.onCurrentUserChanged;
+
   Future<bool> restoreSession() async {
+    if (_hasAttemptedRestore) {
+      return isConnected;
+    }
+    _hasAttemptedRestore = true;
     try {
-      // signInSilently checks the browser cookies without showing a pop-up
       final account = await _googleSignIn.signInSilently();
-      return account != null; // Returns true if it found a saved session!
+      return account != null;
     } catch (e) {
       debugPrint("Silent Sign-In Error: $e");
       return false;
     }
   }
 
+  /// Identity sign-in ONLY — used by the Settings screen. Does not
+  /// request Calendar scope; that's a separate, deliberate step
+  /// (see requestCalendarAccess) so it can be triggered by its own
+  /// direct button click.
   Future<GoogleSignInAccount?> connectCalendar() async {
     try {
       final account = await _googleSignIn.signIn();
+      _hasAttemptedRestore = true;
       return account;
     } catch (e) {
       debugPrint("Google Sign In Error: $e");
@@ -50,14 +54,25 @@ class GoogleCalendarService {
     }
   }
 
-  // 3. Fetch the Events
+  /// Requests actual Calendar access. MUST be called directly from a
+  /// button's onPressed, with nothing awaited before it in that same
+  /// tap — Google requires this to be a direct user gesture, or the
+  /// browser silently blocks the consent popup.
+  Future<bool> requestCalendarAccess() async {
+    try {
+      final granted = await _googleSignIn.requestScopes(<String>[
+        calendar.CalendarApi.calendarEventsScope,
+      ]);
+      return granted;
+    } catch (e) {
+      debugPrint("Calendar scope request error: $e");
+      return false;
+    }
+  }
+
   Future<List<calendar.Event>> getUpcomingEvents() async {
     try {
-      // 🚀 Now, _googleSignIn.currentUser will actually be remembered!
-      GoogleSignInAccount? account =
-          _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
-
-      if (account == null) {
+      if (!isConnected) {
         throw Exception("User is not connected to Google Calendar");
       }
 
@@ -65,7 +80,6 @@ class GoogleCalendarService {
       if (authClient == null) throw Exception("Failed to authenticate client");
 
       final calendarApi = calendar.CalendarApi(authClient);
-
       final events = await calendarApi.events.list(
         'primary',
         timeMin: DateTime.now().toUtc(),
@@ -81,46 +95,39 @@ class GoogleCalendarService {
     }
   }
 
-  // 5. Create a New Event (and add employees!)
   Future<calendar.Event?> createEvent({
     required String title,
     required String description,
     required DateTime startTime,
     required DateTime endTime,
-    required List<String> employeeEmails, // The assigned employees!
+    required List<String> employeeEmails,
   }) async {
     try {
-      GoogleSignInAccount? account =
-          _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
-      if (account == null) throw Exception("Not signed in");
+      if (!isConnected) throw Exception("Not signed in");
 
       final authClient = await _googleSignIn.authenticatedClient();
       if (authClient == null) throw Exception("Failed to authenticate client");
 
       final calendarApi = calendar.CalendarApi(authClient);
 
-      // 1. Build the Google Event Object
       final newEvent = calendar.Event(
         summary: title,
         description: description,
         start: calendar.EventDateTime(
           dateTime: startTime.toUtc(),
-          timeZone: 'UTC', // Google handles the local conversion!
+          timeZone: 'UTC',
         ),
         end: calendar.EventDateTime(dateTime: endTime.toUtc(), timeZone: 'UTC'),
-        // 2. Map your employee emails to Google Attendees
         attendees: employeeEmails
             .map((email) => calendar.EventAttendee(email: email))
             .toList(),
       );
 
-      // 3. Push it to Google Calendar!
       final createdEvent = await calendarApi.events.insert(
         newEvent,
         'primary',
         sendUpdates: 'all',
       );
-
       return createdEvent;
     } catch (e) {
       debugPrint("Error creating calendar event: $e");
@@ -128,8 +135,8 @@ class GoogleCalendarService {
     }
   }
 
-  // 4. Disconnect
   Future<void> disconnect() async {
     await _googleSignIn.disconnect();
+    _hasAttemptedRestore = false;
   }
 }

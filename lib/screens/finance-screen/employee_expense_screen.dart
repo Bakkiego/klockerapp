@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 
 class EmployeeExpenseScreen extends StatefulWidget {
@@ -13,40 +15,23 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
   bool _isSubmitting = false;
   List<Map<String, dynamic>> _myExpenses = [];
 
-  // 🚀 NEW: Dynamic currency variable (defaults to $ if loading fails)
-  String _currencySymbol = '\$';
-
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _fetchInitialData();
+    _fetchExpenses();
   }
 
-  // 1. 🚀 UPDATED: Fetch BOTH the expenses and the company settings in one go!
-  Future<void> _fetchInitialData() async {
+  Future<void> _fetchExpenses() async {
     setState(() => _isLoading = true);
     try {
-      // Run both database calls at the exact same time for speed
-      final results = await Future.wait([
-        SupabaseService().getMyExpenseClaims(),
-        SupabaseService().getTenantSettings(),
-      ]);
-
-      final expensesData = results[0] as List<Map<String, dynamic>>;
-      final tenantSettings = results[1] as Map<String, dynamic>?;
+      final expensesData = await SupabaseService().getMyExpenseClaims();
 
       if (mounted) {
         setState(() {
           _myExpenses = expensesData;
-
-          // 🚀 Inject the company's chosen currency!
-          if (tenantSettings != null && tenantSettings['currency'] != null) {
-            _currencySymbol = tenantSettings['currency'];
-          }
-
           _isLoading = false;
         });
       }
@@ -63,7 +48,6 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
     }
   }
 
-  // 2. Submit REAL data to Supabase
   Future<void> _submitClaim() async {
     if (_titleController.text.isEmpty || _amountController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -97,7 +81,7 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
       );
 
       if (mounted) {
-        Navigator.pop(context); // Close the bottom sheet
+        Navigator.pop(context);
         _titleController.clear();
         _amountController.clear();
 
@@ -108,8 +92,7 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
           ),
         );
 
-        // Refresh the list to show the new pending claim!
-        _fetchInitialData();
+        _fetchExpenses();
       }
     } catch (e) {
       if (mounted) {
@@ -132,11 +115,11 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
       case 'rejected':
         return Colors.redAccent;
       default:
-        return Colors.orange; // Pending
+        return Colors.orange;
     }
   }
 
-  void _showAddExpenseSheet() {
+  void _showAddExpenseSheet(String currency) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -173,10 +156,9 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    // 🚀 UPDATED: Uses the dynamic currency symbol
                     decoration: InputDecoration(
                       labelText: "Amount",
-                      prefixText: "$_currencySymbol ",
+                      prefixText: "$currency ",
                     ),
                   ),
                   const SizedBox(height: 15),
@@ -198,8 +180,9 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
                         : () async {
                             setSheetState(() => _isSubmitting = true);
                             await _submitClaim();
-                            if (mounted)
+                            if (mounted) {
                               setSheetState(() => _isSubmitting = false);
+                            }
                           },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF00A36C),
@@ -234,6 +217,8 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text("My Expenses"), centerTitle: true),
       body: _isLoading
@@ -273,9 +258,8 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        // 🚀 UPDATED: Uses the dynamic currency symbol
                         Text(
-                          "$_currencySymbol${amount.toStringAsFixed(2)}",
+                          "$currency${amount.toStringAsFixed(2)}",
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -308,7 +292,7 @@ class _EmployeeExpenseScreenState extends State<EmployeeExpenseScreen> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
-        onPressed: _showAddExpenseSheet,
+        onPressed: () => _showAddExpenseSheet(currency),
         backgroundColor: const Color(0xFF00A36C),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),

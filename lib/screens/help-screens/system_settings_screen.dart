@@ -40,16 +40,8 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
           _isLoadingData = false;
         });
 
-        // 🚀 THE FIX: Push the loaded currency to the provider immediately
         if (_selectedCurrency != null) {
-          final loadedCurrency = CurrencyService().findByCode(
-            _selectedCurrency!,
-          );
-          if (loadedCurrency != null) {
-            context.read<UserProvider>().setCurrencySymbol(
-              loadedCurrency.symbol,
-            );
-          }
+          context.read<UserProvider>().setCurrencyFromCode(_selectedCurrency!);
         }
       }
     } catch (e) {
@@ -303,9 +295,8 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                   // 1. Update Local UI
                   setState(() => _selectedCurrency = currency.code);
 
-                  // 2. Update Provider (Changes it everywhere in the app instantly!)
-                  context.read<UserProvider>().setCurrencySymbol(
-                    currency.symbol,
+                  context.read<UserProvider>().setCurrencyFromCode(
+                    currency.code,
                   );
 
                   // 3. Save to Supabase Database

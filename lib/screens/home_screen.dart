@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
 import 'package:klockerapp/components/notifications_screen.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +12,7 @@ import 'package:klockerapp/supabase/google_calendar_service.dart';
 import 'package:klockerapp/screens/employee-screens/components/time_management_components/attendance_summary.dart';
 import 'package:klockerapp/screens/floating_clock_button.dart';
 import 'package:klockerapp/screens/help-screens/profile_settings_screen.dart';
-
+import 'dart:async';
 import 'help-screens/social_settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 🚀 NEW: Google Calendar State Variables
   final GoogleCalendarService _calendarService = GoogleCalendarService();
+  StreamSubscription<GoogleSignInAccount?>? _authSub;
   List<calendar.Event> _googleEvents = [];
   bool _isCalendarConnected = false;
   bool _isLoadingCalendar = true; // Start loading while we check silent sign-in
@@ -41,20 +43,24 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _fetchInitialData();
-    _checkGoogleCalendarConnection();
-    _checkSavedGoogleSession(); // Attempt silent login on startup
+    _initGoogleCalendar();
+    _authSub = _calendarService.onAuthChanged.listen((account) {
+      if (mounted && account != null && !_isCalendarConnected) {
+        setState(() => _isCalendarConnected = true);
+        _checkGoogleCalendarConnection();
+      }
+    });
   }
 
-  Future<void> _checkSavedGoogleSession() async {
-    // 1. Ask the service to check the browser cookies
-    bool wasAlreadyConnected = await GoogleCalendarService().restoreSession();
-
-    if (wasAlreadyConnected) {
-      // 2. If yes, update the UI and fetch the events immediately!
-      setState(() {
-        _isCalendarConnected = true;
-      });
-      _checkGoogleCalendarConnection(); // (Your existing method that fetches events)
+  Future<void> _initGoogleCalendar() async {
+    final connected = await _calendarService
+        .restoreSession(); // cheap after the first call, ever
+    if (!mounted) return;
+    setState(() => _isCalendarConnected = connected);
+    if (connected) {
+      await _checkGoogleCalendarConnection(); // fetch events, now that we know we're connected
+    } else {
+      setState(() => _isLoadingCalendar = false);
     }
   }
 
@@ -69,7 +75,37 @@ class _HomeScreenState extends State<HomeScreen> {
     return DateTime(date.year, date.month, date.day);
   }
 
-  // Update your google calendar fetcher to populate the map
+  Future<void> _handleConnectNowPressed() async {
+    if (!_calendarService.isConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Please connect your Google account in Settings first.",
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Direct, uninterrupted call from this tap — this is what makes the
+    // real Calendar consent popup actually show up.
+    final granted = await _calendarService.requestCalendarAccess();
+    if (!mounted) return;
+
+    if (granted) {
+      await _checkGoogleCalendarConnection();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Calendar access wasn't granted. Please try again."),
+        ),
+      );
+    }
+  }
+
+  //Update your google calendar fetcher to populate the map
   Future<void> _checkGoogleCalendarConnection() async {
     setState(() => _isLoadingCalendar = true);
     try {
@@ -102,16 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoadingCalendar = false;
         });
       }
-    }
-  }
-
-  Future<void> _connectGoogleCalendar() async {
-    setState(() => _isLoadingCalendar = true);
-    final account = await _calendarService.connectCalendar();
-    if (account != null) {
-      await _checkGoogleCalendarConnection(); // Fetch events after successful connection
-    } else {
-      setState(() => _isLoadingCalendar = false);
     }
   }
 
@@ -626,16 +652,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   // 🚀 THE FIX: Push to settings, wait, and refresh!
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SocialSettingsScreen(),
-                      ),
-                    );
-                    // When they hit "Back" from settings, check if they connected!
-                    _checkGoogleCalendarConnection();
-                  },
+                  onPressed: _handleConnectNowPressed,
                   icon: const Icon(Icons.link),
                   label: const Text(
                     "Connect Now",

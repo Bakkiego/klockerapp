@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
-// 🚀 Make sure this path points to your GoogleCalendarService!
 import 'package:klockerapp/supabase/google_calendar_service.dart';
-
 import '../zoom_meetings_screen.dart';
 
 class SocialSettingsScreen extends StatefulWidget {
@@ -14,30 +14,35 @@ class SocialSettingsScreen extends StatefulWidget {
 }
 
 class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
-  // 🚀 Initialize the real Google Service
   final GoogleCalendarService _calendarService = GoogleCalendarService();
 
   bool _isGoogleConnected = false;
-  bool _isZoomConnected = false; // Zoom is still a mockup for now
+  bool _isZoomConnected = false;
   bool _isLoading = true;
+  StreamSubscription<GoogleSignInAccount?>? _authSub;
 
   @override
   void initState() {
     super.initState();
     _checkConnections();
+    _authSub = _calendarService.onAuthChanged.listen((account) {
+      if (mounted) setState(() => _isGoogleConnected = account != null);
+    });
   }
 
-  // 🚀 Check if they are already signed in when the screen opens
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _checkConnections() async {
     try {
-      // 1. Ask the service to check the browser cookies silently
       bool wasAlreadyConnected = await _calendarService.restoreSession();
-
-      // 2. Update the UI based on what it found
       if (mounted) {
         setState(() {
           _isGoogleConnected = wasAlreadyConnected;
-          _isLoading = false; // Turn off the loading spinner
+          _isLoading = false;
         });
       }
     } catch (e) {
@@ -85,9 +90,6 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  // ==========================================
-                  // --- GOOGLE WORKSPACE CARD (WIRED UP) ---
-                  // ==========================================
                   _buildIntegrationCard(
                     title: "Google Workspace",
                     subtitle: "Sync Google Calendar & Meet",
@@ -97,31 +99,23 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
                     isDark: isDark,
                     onToggle: () async {
                       if (_isGoogleConnected) {
-                        // 🚀 DISCONNECT IF ALREADY CONNECTED
                         await _calendarService.disconnect();
-                        setState(() => _isGoogleConnected = false);
                       } else {
-                        // 🚀 TRIGGER REAL GOOGLE SIGN-IN IF NOT CONNECTED
-                        final account = await _calendarService
-                            .connectCalendar();
-                        if (account != null) {
-                          setState(() => _isGoogleConnected = true);
-                        }
+                        await _calendarService.connectCalendar();
+                        // _isGoogleConnected updates via the onAuthChanged
+                        // listener above, whenever Google actually finishes.
                       }
                     },
                   ),
 
                   const SizedBox(height: 16),
-                  // ==========================================
-                  // --- ZOOM CARD (Smart Calendar Sync) ---
-                  // ==========================================
+
                   _buildIntegrationCard(
                     title: "Zoom",
                     subtitle: "View your synced Zoom meetings",
                     icon: FontAwesomeIcons.video,
                     iconColor: Colors.blueAccent,
-                    isConnected:
-                        _isGoogleConnected, // Relies on Google Calendar connection!
+                    isConnected: _isGoogleConnected,
                     isDark: isDark,
                     onToggle: () {
                       if (!_isGoogleConnected) {
@@ -135,7 +129,6 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
                         return;
                       }
 
-                      // Navigate to the new Zoom Screen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -150,8 +143,6 @@ class _SocialSettingsScreenState extends State<SocialSettingsScreen> {
     );
   }
 
-  // --- REUSABLE UI BUILDER ---
-  // 🚀 UPGRADED: icon parameter changed to FaIconData to handle FontAwesome v11
   Widget _buildIntegrationCard({
     required String title,
     required String subtitle,

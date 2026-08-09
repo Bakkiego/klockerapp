@@ -404,46 +404,49 @@ class _CalendarState extends State<Calendar> {
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF00A36C)),
             )
-          : Column(
-              children: [
-                // THE INTERACTIVE CALENDAR
-                Container(
-                  color: isDark ? Colors.grey[900] : Colors.white,
-                  child: TableCalendar(
-                    firstDay: DateTime(2024),
-                    lastDay: DateTime(2030),
-                    focusedDay: _focusedDay,
-                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                    onDaySelected: _onDaySelected,
-                    eventLoader: (day) => _eventsMap[_normalizeDate(day)] ?? [],
-                    startingDayOfWeek: StartingDayOfWeek.monday,
-                    headerStyle: const HeaderStyle(
-                      formatButtonVisible: true,
-                      titleCentered: true,
-                    ),
-                    calendarStyle: CalendarStyle(
-                      todayDecoration: BoxDecoration(
-                        color: const Color(0xFF00A36C).withOpacity(0.3),
-                        shape: BoxShape.circle,
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  // THE INTERACTIVE CALENDAR — natural height, no fixed size
+                  Container(
+                    color: isDark ? Colors.grey[900] : Colors.white,
+                    child: TableCalendar(
+                      firstDay: DateTime(2024),
+                      lastDay: DateTime(2030),
+                      focusedDay: _focusedDay,
+                      selectedDayPredicate: (day) =>
+                          isSameDay(_selectedDay, day),
+                      onDaySelected: _onDaySelected,
+                      eventLoader: (day) =>
+                          _eventsMap[_normalizeDate(day)] ?? [],
+                      startingDayOfWeek: StartingDayOfWeek.monday,
+                      headerStyle: const HeaderStyle(
+                        formatButtonVisible: true,
+                        titleCentered: true,
                       ),
-                      selectedDecoration: const BoxDecoration(
-                        color: Color(0xFF00A36C),
-                        shape: BoxShape.circle,
-                      ),
-                      markerDecoration: const BoxDecoration(
-                        color: Colors.orange,
-                        shape: BoxShape.circle,
+                      calendarStyle: CalendarStyle(
+                        todayDecoration: BoxDecoration(
+                          color: const Color(0xFF00A36C).withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        selectedDecoration: const BoxDecoration(
+                          color: Color(0xFF00A36C),
+                          shape: BoxShape.circle,
+                        ),
+                        markerDecoration: const BoxDecoration(
+                          color: Colors.orange,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Divider(color: Colors.grey.withOpacity(0.2), thickness: 1),
+                  const SizedBox(height: 10),
+                  Divider(color: Colors.grey.withOpacity(0.2), thickness: 1),
 
-                // THE ITINERARY LIST
-                Expanded(
-                  child: Container(
-                    color: theme.scaffoldBackgroundColor,
+                  // THE ITINERARY LIST — sizes to its own content now,
+                  // since the page around it scrolls instead of forcing
+                  // a fixed-height split.
+                  Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 16,
@@ -463,99 +466,93 @@ class _CalendarState extends State<Calendar> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        Expanded(
-                          child: !_isCalendarConnected
-                              ? _buildNotConnectedState(isDark)
-                              : _selectedDayEvents.isEmpty
-                              ? const Center(
-                                  child: Text(
-                                    "No events planned for this date.",
-                                    style: TextStyle(color: Colors.grey),
+                        if (!_isCalendarConnected)
+                          _buildNotConnectedState(isDark)
+                        else if (_selectedDayEvents.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text(
+                                "No events planned for this date.",
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        else
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _selectedDayEvents.length,
+                            itemBuilder: (context, index) {
+                              final event = _selectedDayEvents[index];
+                              final startTime =
+                                  event.start?.dateTime ?? event.start?.date;
+                              final endTime =
+                                  event.end?.dateTime ?? event.end?.date;
+
+                              String timeString = "All Day";
+                              if (event.start?.dateTime != null) {
+                                final startStr = DateFormat(
+                                  'h:mm a',
+                                ).format(startTime!.toLocal());
+                                final endStr = DateFormat(
+                                  'h:mm a',
+                                ).format(endTime!.toLocal());
+                                timeString = "$startStr - $endStr";
+                              }
+
+                              return Card(
+                                elevation: 0,
+                                margin: const EdgeInsets.only(bottom: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  side: BorderSide(
+                                    color: Colors.grey.withOpacity(0.2),
                                   ),
-                                )
-                              : ListView.builder(
-                                  itemCount: _selectedDayEvents.length,
-                                  itemBuilder: (context, index) {
-                                    final event = _selectedDayEvents[index];
-                                    final startTime =
-                                        event.start?.dateTime ??
-                                        event.start?.date;
-                                    final endTime =
-                                        event.end?.dateTime ?? event.end?.date;
-
-                                    String timeString = "All Day";
-                                    if (event.start?.dateTime != null) {
-                                      final startStr = DateFormat(
-                                        'h:mm a',
-                                      ).format(startTime!.toLocal());
-                                      final endStr = DateFormat(
-                                        'h:mm a',
-                                      ).format(endTime!.toLocal());
-                                      timeString = "$startStr - $endStr";
-                                    }
-
-                                    return Card(
-                                      elevation: 0,
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        side: BorderSide(
-                                          color: Colors.grey.withOpacity(0.2),
-                                        ),
-                                      ),
-                                      child: ListTile(
-                                        contentPadding: const EdgeInsets.all(
-                                          16,
-                                        ),
-                                        leading: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: Colors.orange.withOpacity(
-                                              0.1,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.event_note,
-                                            color: Colors.orange,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          event.summary ?? "Busy",
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                        subtitle: Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 8.0,
-                                          ),
-                                          child: Text(
-                                            timeString,
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                        ),
-                                        trailing: const Icon(
-                                          Icons.chevron_right,
-                                          color: Colors.grey,
-                                        ),
-                                        // 🚀 TRIGGER BOTTOM SHEET ON TAP
-                                        onTap: () => _showEventDetails(event),
-                                      ),
-                                    );
-                                  },
                                 ),
-                        ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.all(16),
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.event_note,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    event.summary ?? "Busy",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: Text(
+                                      timeString,
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.chevron_right,
+                                    color: Colors.grey,
+                                  ),
+                                  onTap: () => _showEventDetails(event),
+                                ),
+                              );
+                            },
+                          ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }
@@ -619,13 +616,23 @@ class _CalendarState extends State<Calendar> {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SocialSettingsScreen(),
-                  ),
-                );
-                _fetchEvents();
+                if (!_calendarService.isConnected) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SocialSettingsScreen(),
+                    ),
+                  );
+                }
+
+                if (!mounted) return;
+                if (!_calendarService.isConnected)
+                  return; // they backed out without connecting
+
+                final granted = await _calendarService.requestCalendarAccess();
+                if (mounted && granted) {
+                  _fetchEvents();
+                }
               },
               icon: const Icon(Icons.link),
               label: const Text(

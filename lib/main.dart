@@ -10,7 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/google_calendar_service.dart';
 import 'package:klockerapp/screens/pending_approval_screen.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+// import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // 🚀 Required for detecting platform and launching URLs
 import 'package:flutter/foundation.dart';
@@ -19,7 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: "config.env");
+  // await dotenv.load(fileName: "config.env");
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUri,
     anonKey: SupabaseConfig.supabaseAnon,
@@ -106,6 +106,13 @@ class _AuthGateState extends State<AuthGate> {
           legacyRole,
         );
         context.read<UserProvider>().setPermissions(permissions);
+
+        final tenantSettings = await SupabaseService().getTenantSettings();
+        if (tenantSettings?['currency'] != null) {
+          context.read<UserProvider>().setCurrencyFromCode(
+            tenantSettings!['currency'],
+          );
+        }
 
         setState(() {
           _role = userRole.fromString(legacyRole);
