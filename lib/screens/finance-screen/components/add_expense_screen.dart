@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 import '../../../supabase/repo/supabase_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
@@ -84,6 +86,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Add New Expense')),
       body: _isLoading
@@ -141,8 +145,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Amount',
+                      prefixText: '$currency ',
                       prefixIcon: Icon(Icons.attach_money, color: Colors.red),
                     ),
                     validator: (v) => v!.isEmpty ? 'Required' : null,

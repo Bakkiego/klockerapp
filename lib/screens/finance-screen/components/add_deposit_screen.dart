@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 import '../../../supabase/repo/supabase_service.dart';
 
 class NewDepositScreen extends StatefulWidget {
@@ -97,6 +99,8 @@ class _NewDepositScreenState extends State<NewDepositScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text('New Deposit')),
       body: _isLoadingAccounts
@@ -132,9 +136,9 @@ class _NewDepositScreenState extends State<NewDepositScreen> {
                     keyboardType: TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Amount',
-                      prefixText: '\$ ',
+                      prefixText: '$currency ',
                       prefixIcon: Icon(Icons.attach_money),
                     ),
                     validator: (v) => v!.isEmpty ? 'Required' : null,

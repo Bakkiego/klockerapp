@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 
 import '../../../supabase/repo/supabase_service.dart';
 
@@ -79,6 +81,8 @@ class _AddNewAccountScreenState extends State<AddNewAccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<UserProvider>().currencySymbol;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Add New Account')),
       body: Form(
@@ -128,9 +132,9 @@ class _AddNewAccountScreenState extends State<AddNewAccountScreen> {
               TextFormField(
                 controller: _initialBalanceController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Initial Balance',
-                  prefixText: '\$',
+                  prefixText: '$currency ',
                   prefixIcon: Icon(Icons.attach_money),
                 ),
                 validator: (value) {
