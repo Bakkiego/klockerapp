@@ -117,7 +117,10 @@ class _LoginScreenState extends State<LoginScreen> {
           customRoleId,
           legacyRole,
         );
-        context.read<UserProvider>().setPermissions(permissions);
+        context.read<UserProvider>().setPermissions(
+          permissions,
+          hasCustomRole: customRoleId != null,
+        );
 
         Navigator.pushReplacement(
           context,

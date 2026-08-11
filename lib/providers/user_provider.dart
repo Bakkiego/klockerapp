@@ -25,20 +25,22 @@ class UserProvider with ChangeNotifier {
 
   // 🚀 2. NEW: Permissions Getter & UI Gatekeeper
   List<String> get permissions => _permissions;
-bool _isChatReady = false;
-bool get isChatReady => _isChatReady;
+  bool _isChatReady = false;
+  bool get isChatReady => _isChatReady;
 
-void setChatReady(bool ready) {
-  _isChatReady = ready;
-  notifyListeners();
-}
+  void setChatReady(bool ready) {
+    _isChatReady = ready;
+    notifyListeners();
+  }
+
   /// The magical 'can' function that controls what buttons the user sees
   bool can(String actionName) {
+    if (_hasCustomRole) {
+      return _permissions.contains(actionName);
+    }
     if (role == userRole.Manager) {
       return true;
     }
-
-    // Otherwise, check if their assigned Custom Role has the specific key
     return _permissions.contains(actionName);
   }
 
@@ -67,8 +69,11 @@ void setChatReady(bool ready) {
   }
 
   // 🚀 3. NEW: Load the permissions in from the database
-  void setPermissions(List<String> perms) {
+  bool _hasCustomRole = false;
+
+  void setPermissions(List<String> perms, {bool hasCustomRole = false}) {
     _permissions = perms;
+    _hasCustomRole = hasCustomRole;
     notifyListeners();
   }
 
@@ -150,7 +155,7 @@ void setChatReady(bool ready) {
     _fullName = null;
     _companyName = null;
     _isChatReady = false;
-    // 🚀 4. NEW: Wipe the permissions out on logout for security
+    _hasCustomRole = false;
     _permissions = [];
     _currencySymbol = 'R';
 
