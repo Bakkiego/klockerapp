@@ -20,11 +20,11 @@ env:
   # Pin this to the version you build with locally: `flutter --version`
   FLUTTER_VERSION: '3.35.4'
   # Remote path, relative to the FTP user's home directory. Verify this is really the docroot.
-  REMOTE_DIR: public_html/app/
+  REMOTE_DIR: domains/klockerapp.com/public_html/app/
   # Public URL that REMOTE_DIR maps to, no trailing slash. Used for post-deploy verification.
   PUBLIC_URL: https://app.klockerapp.com
   # Sub-path the app is served from. Use "/" if you deploy to the domain root instead.
-  BASE_HREF: /app/
+  BASE_HREF: /
 
 jobs:
   build-and-deploy:
@@ -86,7 +86,6 @@ jobs:
           # verbose prints every file transferred — you need this to distinguish
           # "uploaded 40 files" from "there were no changes to upload".
           log-level: verbose
-          dangerous-clean-slate: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_slate }}
           exclude: |
             **/.git*
             **/.git*/**
