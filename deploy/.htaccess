@@ -1,0 +1,70 @@
+# Save this in your repo as: deploy/htaccess
+# The workflow copies it to build/web/.htaccess before uploading.
+# (Kept without the leading dot in the repo so editors and git tooling don't hide it.)
+
+# ---------------------------------------------------------------------------
+# 1. Never cache the app shell.
+#
+# Flutter web reuses the same filenames on every build — main.dart.js is
+# always main.dart.js. These files are what tell the browser which build to
+# load, so if any cache holds onto them, your users are pinned to an old
+# version no matter how many times you redeploy.
+# ---------------------------------------------------------------------------
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter_service_worker\.js|main\.dart\.js|version\.json|manifest\.json|build-info\.json)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header unset ETag
+    FileETag None
+  </FilesMatch>
+
+  # ---------------------------------------------------------------------------
+  # 2. Static assets get a moderate cache.
+  #
+  # Deliberately NOT "immutable" with a one-year max-age: Flutter does not
+  # content-hash files under assets/, so an aggressive policy means updated
+  # images and fonts never reach existing users. One day is a reasonable
+  # compromise. Raise it only for genuinely versioned paths.
+  # ---------------------------------------------------------------------------
+  <FilesMatch "\.(png|jpe?g|gif|svg|webp|ico|woff2?|ttf|otf|json|wasm)$">
+    Header set Cache-Control "public, max-age=86400, must-revalidate"
+  </FilesMatch>
+
+  # canvaskit ships versioned with the Flutter SDK, so it can cache hard.
+  <FilesMatch "^canvaskit.*\.(js|wasm)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 3. Turn off LiteSpeed's server-side page cache for this directory.
+#
+# Hostinger runs LiteSpeed. Its cache sits in front of everything above and
+# is the most likely reason a fresh upload takes ~an hour to appear.
+# ---------------------------------------------------------------------------
+<IfModule LiteSpeed>
+  CacheDisable public /
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 4. SPA fallback so deep links don't 404.
+#    RewriteBase must match the sub-directory you deploy into.
+# ---------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /app/
+
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . index.html [L]
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 5. Don't expose the FTP action's sync manifest.
+# ---------------------------------------------------------------------------
+<Files ".ftp-deploy-sync-state.json">
+  Require all denied
+</Files>
+
+AddType application/wasm .wasm

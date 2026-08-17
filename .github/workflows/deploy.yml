@@ -3,32 +3,112 @@ name: Deploy Klocker to Hostinger
 on:
   push:
     branches:
-      - main # Change this to 'master' if your main branch is called master
+      - main
+  workflow_dispatch:
+    inputs:
+      clean_slate:
+        description: "Wipe the remote directory and re-upload every file (use when a deploy silently no-ops)"
+        type: boolean
+        default: false
+
+# Two deploys racing each other over FTP is how the sync state file gets corrupted.
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: false
+
+env:
+  # Pin this to the version you build with locally: `flutter --version`
+  FLUTTER_VERSION: '3.35.4'
+  # Remote path, relative to the FTP user's home directory. Verify this is really the docroot.
+  REMOTE_DIR: public_html/app/
+  # Public URL that REMOTE_DIR maps to, no trailing slash. Used for post-deploy verification.
+  PUBLIC_URL: https://app.klockerapp.com
+  # Sub-path the app is served from. Use "/" if you deploy to the domain root instead.
+  BASE_HREF: /app/
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
-      - name: 📦 Install Dependencies
+      - name: Show toolchain versions
+        run: flutter --version
+
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: 🛠️ Build Flutter Web
-        run: flutter build web --dart-define=FLUTTER_WEB_USE_SKIA=true --release
+      # FLUTTER_WEB_USE_SKIA was removed from Flutter years ago and is silently ignored.
+      # --base-href matters because you serve from a sub-directory, not the domain root.
+      - name: Build Flutter web
+        run: flutter build web --release --base-href "${{ env.BASE_HREF }}"
 
-      - name: 🚀 Deploy to Hostinger via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      # Stamp the build so we can prove afterwards which commit is actually live.
+      - name: Write build stamp
+        run: |
+          cat > build/web/build-info.json <<EOF
+          {
+            "sha": "${{ github.sha }}",
+            "run": "${{ github.run_number }}",
+            "ref": "${{ github.ref_name }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cat build/web/build-info.json
+
+      # Ships cache-control rules alongside the build. See deploy/htaccess in the repo.
+      - name: Add .htaccess (cache headers + SPA fallback)
+        run: |
+          if [ -f deploy/htaccess ]; then
+            cp deploy/htaccess build/web/.htaccess
+          else
+            echo "::warning::deploy/htaccess not found — deploying without cache-control rules"
+          fi
+
+      - name: Deploy to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
           local-dir: ./build/web/
-          server-dir: public_html/app/
+          server-dir: ${{ env.REMOTE_DIR }}
+          # verbose prints every file transferred — you need this to distinguish
+          # "uploaded 40 files" from "there were no changes to upload".
+          log-level: verbose
+          dangerous-clean-slate: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_slate }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/*.map
+
+      # The real fix: don't trust the green checkmark, go and look.
+      - name: Verify the live site serves this commit
+        run: |
+          set -e
+          echo "Checking ${PUBLIC_URL}/build-info.json"
+          for attempt in 1 2 3 4 5 6; do
+            live=$(curl -fsSL \
+              -H 'Cache-Control: no-cache, no-store' \
+              -H 'Pragma: no-cache' \
+              "${PUBLIC_URL}/build-info.json?cachebust=${GITHUB_RUN_ID}-${attempt}" || echo '')
+            echo "attempt ${attempt}: ${live}"
+            if echo "$live" | grep -q "${GITHUB_SHA}"; then
+              echo "✅ Live build matches ${GITHUB_SHA}"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Live site is NOT serving ${GITHUB_SHA}. Either the upload went to the wrong directory, the FTP sync state file skipped the transfer, or a cache layer (LiteSpeed / Hostinger / Cloudflare) is serving stale files."
+          exit 1

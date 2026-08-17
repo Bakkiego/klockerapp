@@ -208,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final hour = DateTime.now().hour;
     if (hour < 12) return "Good Morning, $name";
     if (hour < 17) return "Good Afternoon, $name";
-    return "Good Evening, $name";
+    return "Good Evenings, $name";
   }
 
   @override
