@@ -120,7 +120,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     try {
       await HapticFeedback.vibrate();
     } catch (e) {
-      print("Haptic error: $e");
+      debugPrint("Haptic error: $e");
     }
 
     setState(() => _isProcessing = true);
@@ -142,30 +142,44 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       );
 
       if (_activeShift != null) {
-        // --- CLOCK OUT LOGIC ---
-        final DateTime clockInTime = DateTime.parse(_activeShift!['clock_in']);
-        final DateTime clockOutTime = DateTime.now();
-        final int totalMinutes = clockOutTime.difference(clockInTime).inMinutes;
-        final String attendanceId = _activeShift!['id'];
-
-        // 🚀 UPDATED: Now passing the outLat and outLng!
-        await SupabaseService().clockOut(
-          attendanceId: attendanceId,
-          totalMinutesWorked: totalMinutes,
+        // --- CLOCK OUT ---
+        // No local time maths. The server measures the shift.
+        final result = await SupabaseService().clockOut(
+          attendanceId: _activeShift!['id'],
           outLat: userPosition.latitude,
           outLng: userPosition.longitude,
         );
 
         if (mounted) {
+          final int total = (result['total_minutes'] ?? 0) as int;
+          final int ot = (result['overtime_minutes'] ?? 0) as int;
+          final String status = result['status'] ?? 'completed';
+
+          final hours = total ~/ 60;
+          final mins = total % 60;
+          final worked = hours > 0 ? "${hours}h ${mins}m" : "${mins}m";
+
+          String message = "Clocked out — $worked recorded";
+          Color colour = Colors.orange;
+
+          if (status == 'overtime_pending') {
+            message =
+                "Clocked out — $worked ($ot min overtime, "
+                "pending approval)";
+            colour = Colors.blue;
+          } else if (status == 'early_leave_pending') {
+            message =
+                "Clocked out early — $worked recorded, "
+                "sent for review";
+            colour = Colors.purple;
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Clocked Out Successfully!"),
-              backgroundColor: Colors.orange,
-            ),
+            SnackBar(content: Text(message), backgroundColor: colour),
           );
         }
       } else {
-        // --- CLOCK IN LOGIC ---
+        // --- CLOCK IN ---
         final assignedBranch = await SupabaseService().getAssignedBranch();
 
         if (assignedBranch == null) {
@@ -178,6 +192,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           );
         }
 
+        // Local pre-check so the user gets instant feedback rather than
+        // waiting on a round trip to be told they're too far away.
         double distanceInMeters = Geolocator.distanceBetween(
           userPosition.latitude,
           userPosition.longitude,
@@ -189,22 +205,30 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
 
         if (distanceInMeters > allowedRadius) {
           throw Exception(
-            "You are ${distanceInMeters.toStringAsFixed(0)}m away from your assigned branch (${assignedBranch['name']}). You must be within ${allowedRadius}m to clock in!",
+            "You are ${distanceInMeters.toStringAsFixed(0)}m away from your "
+            "assigned branch (${assignedBranch['name']}). You must be within "
+            "${allowedRadius}m to clock in!",
           );
         }
 
-        // Inside your clock-in button logic:
-        await SupabaseService().clockIn(
+        // isVerified is gone — the server sets it after doing its own
+        // distance check, so the client can no longer assert it.
+        final result = await SupabaseService().clockIn(
           branchId: assignedBranch['id'],
           lat: userPosition.latitude,
           lng: userPosition.longitude,
-          isVerified: true, // You've already checked the geofence in the UI
         );
+
         if (mounted) {
+          final bool isLate = result['is_late'] == true;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("Clocked into ${assignedBranch['name']}!"),
-              backgroundColor: Colors.green,
+              content: Text(
+                isLate
+                    ? "Clocked into ${assignedBranch['name']} — marked late"
+                    : "Clocked into ${assignedBranch['name']}!",
+              ),
+              backgroundColor: isLate ? Colors.orange : Colors.green,
             ),
           );
         }

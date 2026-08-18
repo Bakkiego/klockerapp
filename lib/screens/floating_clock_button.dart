@@ -15,7 +15,7 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
   bool _isProcessing = false;
   Map<String, dynamic>? _activeShift;
 
-  // 🚀 NEW: Track if the Admin actually has a shift today
+  // Track if the Admin actually has a shift today
   bool _hasShiftToday = false;
 
   @override
@@ -24,15 +24,13 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
     _fetchShiftStatus();
   }
 
-  // 1. Silently check if the Admin is already clocked in AND if they have a shift
+  // 1. Silently check if the Admin is already clocked in AND has a shift
   Future<void> _fetchShiftStatus() async {
     setState(() => _isLoading = true);
 
     try {
-      // Check if they are currently clocked in
       final shift = await SupabaseService().getActiveShift();
 
-      // 🚀 NEW: Check if they are scheduled for today
       final upcomingShifts = await SupabaseService().getMyUpcomingShifts();
       DateTime now = DateTime.now();
       bool foundShiftToday = false;
@@ -41,12 +39,11 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
         if (s['shift_date'] != null) {
           DateTime shiftDate = DateTime.parse(s['shift_date']);
 
-          // 🚀 BULLETPROOF DATE CHECK
           if (shiftDate.year == now.year &&
               shiftDate.month == now.month &&
               shiftDate.day == now.day) {
             foundShiftToday = true;
-            break; // We found one, stop checking!
+            break;
           }
         }
       }
@@ -59,11 +56,16 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
         });
       }
     } catch (e) {
+      debugPrint("Shift status error: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   // 2. The Geofence & Clock In/Out Engine
+  //
+  // The GPS check here is a fast local pre-check for responsiveness.
+  // The server independently verifies distance, roster and timing inside
+  // clock_in_v2 / clock_out_v2 — this no longer has to be trusted.
   Future<void> _handleClockToggle() async {
     try {
       await HapticFeedback.mediumImpact();
@@ -72,7 +74,6 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
     setState(() => _isProcessing = true);
 
     try {
-      // GPS Permissions
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) throw Exception('Please turn on your phone GPS.');
 
@@ -90,24 +91,34 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
 
       if (_activeShift != null) {
         // --- CLOCK OUT ---
-        final DateTime clockInTime = DateTime.parse(_activeShift!['clock_in']);
-        final int totalMinutes = DateTime.now()
-            .difference(clockInTime)
-            .inMinutes;
-
-        await SupabaseService().clockOut(
+        // No local time maths — the server measures the shift.
+        final result = await SupabaseService().clockOut(
           attendanceId: _activeShift!['id'],
-          totalMinutesWorked: totalMinutes,
           outLat: userPosition.latitude,
           outLng: userPosition.longitude,
         );
 
         if (mounted) {
+          final int total = (result['total_minutes'] ?? 0) as int;
+          final String status = result['status'] ?? 'completed';
+
+          final hours = total ~/ 60;
+          final mins = total % 60;
+          final worked = hours > 0 ? "${hours}h ${mins}m" : "${mins}m";
+
+          String message = "Clocked out — $worked recorded";
+          Color colour = Colors.orange;
+
+          if (status == 'overtime_pending') {
+            message = "Clocked out — $worked, overtime pending approval";
+            colour = Colors.blue;
+          } else if (status == 'early_leave_pending') {
+            message = "Clocked out early — $worked, sent for review";
+            colour = Colors.purple;
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Clocked Out Successfully!"),
-              backgroundColor: Colors.orange,
-            ),
+            SnackBar(content: Text(message), backgroundColor: colour),
           );
         }
       } else {
@@ -133,28 +144,33 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
 
         if (distanceInMeters > allowedRadius) {
           throw Exception(
-            "You are ${distanceInMeters.toStringAsFixed(0)}m away from the branch. Must be within ${allowedRadius}m.",
+            "You are ${distanceInMeters.toStringAsFixed(0)}m away from the "
+            "branch. Must be within ${allowedRadius}m.",
           );
         }
 
-        await SupabaseService().clockIn(
+        // isVerified removed — the server sets it after its own check.
+        final result = await SupabaseService().clockIn(
           branchId: assignedBranch['id'],
           lat: userPosition.latitude,
           lng: userPosition.longitude,
-          isVerified: true,
         );
 
         if (mounted) {
+          final bool isLate = result['is_late'] == true;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("Clocked into ${assignedBranch['name']}!"),
-              backgroundColor: Colors.green,
+              content: Text(
+                isLate
+                    ? "Clocked into ${assignedBranch['name']} — marked late"
+                    : "Clocked into ${assignedBranch['name']}!",
+              ),
+              backgroundColor: isLate ? Colors.orange : Colors.green,
             ),
           );
         }
       }
 
-      // Refresh the button state (will unlock if they just clocked out and have no other shifts)
       await _fetchShiftStatus();
     } catch (e) {
       if (mounted) {
@@ -187,11 +203,8 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
     }
 
     final bool isClockedIn = _activeShift != null;
-
-    // 🚀 NEW: Determine if the button should be locked
     final bool isLockedOut = !isClockedIn && !_hasShiftToday;
 
-    // 🚀 NEW: Dynamic Button Color
     Color btnColor;
     if (isClockedIn) {
       btnColor = Colors.redAccent;
@@ -206,7 +219,6 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
       onPressed: _isProcessing
           ? null
           : () {
-              // 🚀 NEW: Intercept the tap if they are locked out!
               if (isLockedOut) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -215,7 +227,7 @@ class _FloatingClockButtonState extends State<FloatingClockButton> {
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
-                return; // Stop the function
+                return;
               }
               _handleClockToggle();
             },
