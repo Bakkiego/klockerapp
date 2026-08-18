@@ -357,6 +357,7 @@ class SupabaseService {
         'role': userRole.Employee.toSql, // Also using your enum here!
         'tenant_id': tenantId,
         'email': email,
+        'must_change_password': true,
       });
     }
   }
@@ -1232,102 +1233,38 @@ class SupabaseService {
   // ==========================================
   // CLOCK IN (Split-Shift Supported)
   // ==========================================
-  Future<void> clockIn({
+  Future<Map<String, dynamic>> clockIn({
     required String branchId,
     required double lat,
     required double lng,
-    required bool isVerified,
   }) async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) throw Exception("User not logged in");
-
-    final now = DateTime.now();
-    final String todayStr = DateFormat('yyyy-MM-dd').format(now);
-
-    // 1. Fetch ALL scheduled shifts for David today, along with their start times
-    final scheduledRosters = await _supabase
-        .from('rosters')
-        .select('id, tenant_id, shift_templates(start_time)')
-        .eq('profile_id', user.id)
-        .eq('shift_date', todayStr);
-
-    if (scheduledRosters.isEmpty) {
-      throw Exception(
-        "No rostered shift found for today. You cannot clock in.",
-      );
-    }
-
-    // 2. Fetch today's Attendance records to see which shifts he already worked
-    final todaysPunches = await _supabase
-        .from('attendance')
-        .select('roster_id')
-        .eq('profile_id', user.id)
-        .eq('date', todayStr);
-
-    // Create a list of roster IDs that have already been clocked into
-    final claimedRosterIds = todaysPunches.map((a) => a['roster_id']).toSet();
-
-    // 3. Filter out the shifts he has already worked
-    final availableRosters = scheduledRosters
-        .where((roster) => !claimedRosterIds.contains(roster['id']))
-        .toList();
-
-    if (availableRosters.isEmpty) {
-      throw Exception(
-        "You have already completed all your scheduled shifts for today.",
-      );
-    }
-
-    // 4. Sort the remaining shifts by start_time so he clocks into the morning one before the evening one
-    availableRosters.sort((a, b) {
-      final timeA = a['shift_templates']?['start_time'] ?? '23:59:59';
-      final timeB = b['shift_templates']?['start_time'] ?? '23:59:59';
-      return timeA.compareTo(timeB);
-    });
-
-    // 5. Select the very next shift he is supposed to work
-    final currentRoster = availableRosters.first;
-
-    // 🚀 Check if they are late
-    final String startTimeStr =
-        currentRoster['shift_templates']?['start_time'] ?? '00:00:00';
-    final List<String> timeParts = startTimeStr.split(':');
-    final expectedStart = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      int.tryParse(timeParts[0]) ?? 0,
-      int.tryParse(timeParts[1]) ?? 0,
+    final result = await _supabase.rpc(
+      'clock_in_v2',
+      params: {'p_branch_id': branchId, 'p_lat': lat, 'p_lng': lng},
     );
-    final isLate = now.isAfter(expectedStart.add(const Duration(minutes: 5)));
 
-    // 6. Insert the attendance record
-    await _supabase.from('attendance').insert({
-      'profile_id': user.id,
-      'tenant_id': currentRoster['tenant_id'],
-      'branch_id': branchId,
-      'roster_id': currentRoster['id'],
-      'date': todayStr,
-      'clock_in': now.toUtc().toIso8601String(),
-      'in_lat': lat,
-      'in_long': lng,
-      'is_verified_by_gps': isVerified,
-      'status': 'active',
-    });
+    final data = Map<String, dynamic>.from(result as Map);
 
-    // 🚀 NOTIFICATION TRIGGER: Notify Business Owner if Late
-    if (isLate) {
-      final empProfile = await _supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single();
-      await notifyBusinessOwner(
-        title: "Late Clock-In",
-        message:
-            "${empProfile['full_name']} clocked in late for their $startTimeStr shift.",
-      );
+    // The late notification still goes out from here so your existing
+    // notifyBusinessOwner helper keeps working — but the *decision* about
+    // whether it's late was made by the server, not by this device.
+    if (data['is_late'] == true) {
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final empProfile = await _supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single();
+
+        await notifyBusinessOwner(
+          title: "Late Clock-In",
+          message: "${empProfile['full_name']} clocked in late.",
+        );
+      }
     }
+
+    return data;
   }
 
   // ==========================================
@@ -1431,84 +1368,46 @@ class SupabaseService {
   // ==========================================
   // CLOCK OUT (Time-Aware Version)
   // ==========================================
-  Future<void> clockOut({
+  /// Clock out. The server measures the time, computes the split, and
+  /// decides overtime vs early leave. Returns:
+  ///   total_minutes, standard_minutes, overtime_minutes,
+  ///   status, is_overtime, is_early_leave, server_now
+  Future<Map<String, dynamic>> clockOut({
     required String attendanceId,
-    required int totalMinutesWorked,
     required double outLat,
     required double outLng,
   }) async {
-    // 1. Fetch attendance, date, and exact template times
-    final response = await _supabase
-        .from('attendance')
-        .select('*, rosters(shift_templates(start_time, end_time))')
-        .eq('id', attendanceId)
-        .single();
+    final result = await _supabase.rpc(
+      'clock_out_v2',
+      params: {
+        'p_attendance_id': attendanceId,
+        'p_lat': outLat,
+        'p_lng': outLng,
+      },
+    );
 
-    final template = response['rosters']?['shift_templates'];
-    if (template == null) throw Exception("Shift template missing.");
+    final data = Map<String, dynamic>.from(result as Map);
 
-    // 2. Build the EXACT expected End Time (Combining Date + Time)
-    final String dateStr = response['date'];
-    final String endStr = template['end_time'];
-    final String startStr = template['start_time'];
+    // Early departure alert. The decision was made by the server against
+    // its own clock — this just delivers the message.
+    if (data['is_early_leave'] == true) {
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final empProfile = await _supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single();
 
-    DateTime expectedStart = DateTime.parse("$dateStr $startStr");
-    DateTime expectedEnd = DateTime.parse("$dateStr $endStr");
-
-    // Fix for overnight shifts crossing midnight
-    if (expectedEnd.isBefore(expectedStart)) {
-      expectedEnd = expectedEnd.add(const Duration(days: 1));
+        await notifyBusinessOwner(
+          title: "Early Departure",
+          message: "${empProfile['full_name']} clocked out early.",
+        );
+      }
     }
 
-    final now = DateTime.now();
-    int standardMinutes = totalMinutesWorked;
-    int overtimeMinutes = 0;
-    bool isOvertime = false;
-
-    // Start with whatever status the DB has (e.g., active), default to completed
-    String finalStatus = response['status'] ?? 'completed';
-    if (finalStatus == 'active') finalStatus = 'completed';
-
-    // 3. 🚀 THE MAGIC: Compare current time directly to the 10:00 PM End Time
-    if (now.isAfter(expectedEnd.add(const Duration(minutes: 5)))) {
-      // OVERTIME: They clocked out more than 5 minutes past 10:00 PM
-      isOvertime = true;
-      overtimeMinutes = now.difference(expectedEnd).inMinutes;
-      standardMinutes = totalMinutesWorked - overtimeMinutes;
-      finalStatus = 'overtime_pending';
-    } else if (now.isBefore(expectedEnd.subtract(const Duration(minutes: 5)))) {
-      // EARLY LEAVE: They clocked out more than 5 minutes before 10:00 PM
-      finalStatus = 'early_leave_pending';
-
-      // 🚀 NOTIFICATION TRIGGER: Notify Owner of Early Leave
-      final empProfile = await _supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', response['profile_id'])
-          .single();
-      await notifyBusinessOwner(
-        title: "Early Departure",
-        message: "${empProfile['full_name']} clocked out early.",
-      );
-    }
-
-    // 4. Update the Database
-    await _supabase
-        .from('attendance')
-        .update({
-          'clock_out': now.toUtc().toIso8601String(),
-          'out_lat': outLat,
-          'out_long': outLng,
-          'status': finalStatus,
-          'standard_minutes': standardMinutes,
-          'overtime_minutes': overtimeMinutes,
-          'is_overtime': isOvertime,
-          'is_staying_late': isOvertime,
-          'overtime_approved': false,
-        })
-        .eq('id', attendanceId);
+    return data;
   }
-
   // --- Add this to your SupabaseService class ---
 
   // --- Add to your SupabaseService class ---
@@ -3976,17 +3875,20 @@ class SupabaseService {
   // ==========================================
   // --- TRAINING DESIGNATOR METHODS ---
   // ==========================================
+  String _dateOnly(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
-  /// Create a new training assignment
   Future<void> createTraining({
     required String tenantId,
     required String adminId,
     required String trainerId,
     required String traineeId,
     required String topic,
-    required int durationMinutes,
+    required DateTime startDate,
+    required DateTime endDate,
     String? description,
-    DateTime? scheduledDate,
   }) async {
     try {
       await _supabase.from('trainings').insert({
@@ -3996,21 +3898,22 @@ class SupabaseService {
         'trainee_id': traineeId,
         'topic': topic,
         'description': description,
-        'duration_minutes': durationMinutes,
-        'scheduled_date': scheduledDate?.toIso8601String(),
+        'start_date': _dateOnly(startDate),
+        'end_date': _dateOnly(endDate),
         'status': 'pending',
       });
 
-      // 🚀 NOTIFICATION TRIGGER: Tell the Trainer and Trainee
+      final range = '${_dateOnly(startDate)} to ${_dateOnly(endDate)}';
+
       await sendNotification(
         recipientId: trainerId,
         title: "Training Scheduled",
-        message: "You have been assigned to train a team member on: $topic.",
+        message: "You are training a team member on: $topic ($range).",
       );
       await sendNotification(
         recipientId: traineeId,
         title: "Training Scheduled",
-        message: "You have been scheduled for training on: $topic.",
+        message: "You have been scheduled for training on: $topic ($range).",
       );
     } catch (e) {
       debugPrint('Error creating training: $e');
@@ -4018,8 +3921,8 @@ class SupabaseService {
     }
   }
 
-  /// Fetch all trainings for the current company
-  /// We use Supabase relational queries to grab the names of the Trainer and Trainee automatically!
+  /// Fetch all trainings for the current company.
+  /// Relational selects pull the trainer/trainee/admin names in one round trip.
   Future<List<Map<String, dynamic>>> getCompanyTrainings(
     String tenantId,
   ) async {
@@ -4033,7 +3936,7 @@ class SupabaseService {
             admin:profiles!admin_id(full_name)
           ''')
           .eq('tenant_id', tenantId)
-          .order('created_at', ascending: false);
+          .order('start_date', ascending: false);
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
@@ -4042,6 +3945,111 @@ class SupabaseService {
     }
   }
 
+  Future<void> updateTrainingStatus({
+    required String trainingId,
+    required String status,
+    required String topic,
+    String? trainerId,
+    String? traineeId,
+  }) async {
+    try {
+      final updates = <String, dynamic>{'status': status};
+
+      if (status == 'completed') {
+        updates['completed_at'] = DateTime.now().toUtc().toIso8601String();
+      } else {
+        // Re-opening a completed training clears the stamp.
+        updates['completed_at'] = null;
+      }
+
+      await _supabase.from('trainings').update(updates).eq('id', trainingId);
+
+      final message = switch (status) {
+        'in_progress' => "Your training on $topic has started.",
+        'completed' => "Your training on $topic is marked complete.",
+        'cancelled' => "Your training on $topic has been cancelled.",
+        _ => "Your training on $topic was updated.",
+      };
+
+      for (final id in [trainerId, traineeId]) {
+        if (id != null) {
+          await sendNotification(
+            recipientId: id,
+            title: "Training Updated",
+            message: message,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating training status: $e');
+      rethrow;
+    }
+  }
+
+  /// Push a training's end date back. Records the original end date the first
+  /// time this happens so the UI can show what it was extended from.
+  Future<void> extendTraining({
+    required String trainingId,
+    required DateTime newEndDate,
+    required DateTime currentEndDate,
+    DateTime? originalEndDate,
+    required String topic,
+    String? trainerId,
+    String? traineeId,
+  }) async {
+    try {
+      await _supabase
+          .from('trainings')
+          .update({
+            'end_date': _dateOnly(newEndDate),
+            'original_end_date': _dateOnly(originalEndDate ?? currentEndDate),
+            'status': 'extended',
+          })
+          .eq('id', trainingId);
+
+      for (final id in [trainerId, traineeId]) {
+        if (id != null) {
+          await sendNotification(
+            recipientId: id,
+            title: "Training Extended",
+            message:
+                "Training on $topic now runs until ${_dateOnly(newEndDate)}.",
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error extending training: $e');
+      rethrow;
+    }
+  }
+
+  /// Edit the core details of an existing training.
+  Future<void> updateTrainingDetails({
+    required String trainingId,
+    required String topic,
+    String? description,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      await _supabase
+          .from('trainings')
+          .update({
+            'topic': topic,
+            'description': description,
+            'start_date': _dateOnly(startDate),
+            'end_date': _dateOnly(endDate),
+          })
+          .eq('id', trainingId);
+    } catch (e) {
+      debugPrint('Error updating training: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteTraining(String trainingId) async {
+    await _supabase.from('trainings').delete().eq('id', trainingId);
+  }
   // ==========================================
   // --- ASSET MANAGEMENT METHODS ---
   // ==========================================
@@ -4460,5 +4468,93 @@ class SupabaseService {
       print('Error fetching report: $e');
       throw Exception('Failed to load report data');
     }
+  }
+
+  // ============================================================
+  // Add to supabase_service.dart, near the login / signUp methods.
+  // ============================================================
+
+  /// Does this account still need to set its own password?
+  /// Call after login to decide whether to route into the forced flow.
+  Future<bool> needsPasswordChange() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return false;
+
+    final data = await _supabase
+        .from('profiles')
+        .select('must_change_password')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    return data?['must_change_password'] == true;
+  }
+
+  /// Change the signed-in user's password.
+  ///
+  /// Supabase's updateUser does NOT verify the current password, so we
+  /// re-authenticate first. That serves two purposes: it proves the person
+  /// at the keyboard knows the existing password, and it gives us the old
+  /// password in hand — which the chat key re-wrap needs (see below).
+  ///
+  /// Throws a human-readable Exception on failure.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('You are not signed in.');
+
+    final email = user.email;
+    if (email == null) {
+      throw Exception('This account has no email address on file.');
+    }
+
+    if (newPassword.trim().length < 8) {
+      throw Exception('Your new password needs at least 8 characters.');
+    }
+    if (newPassword.trim() == currentPassword.trim()) {
+      throw Exception(
+        'Your new password must be different from the current one.',
+      );
+    }
+
+    // 1. Prove they know the current password.
+    try {
+      await _supabase.auth.signInWithPassword(
+        email: email,
+        password: currentPassword.trim(),
+      );
+    } on AuthException {
+      throw Exception('That current password is not correct.');
+    }
+
+    // 2. ⚠️ CHAT KEY RE-WRAP GOES HERE — BEFORE the password changes.
+    //
+    // signInUser() derives the chat identity from the login password via
+    // KeyService.restoreFromPassword(). If the password changes without the
+    // key material being re-wrapped under the new one, the user permanently
+    // loses access to their encrypted chat history.
+    //
+    // Uncomment and adjust once the KeyService API is confirmed:
+    //
+    // await KeyService.rewrapForNewPassword(
+    //   user.id,
+    //   currentPassword.trim(),
+    //   newPassword.trim(),
+    // );
+    //
+    // If it throws, we must NOT proceed to step 3 — better to fail the
+    // password change than to silently orphan the keys.
+
+    // 3. Set the new password.
+    await _supabase.auth.updateUser(
+      UserAttributes(password: newPassword.trim()),
+    );
+
+    // 4. Clear the first-login flag.
+    await _supabase
+        .from('profiles')
+        .update({'must_change_password': false})
+        .eq('id', user.id);
   }
 }
