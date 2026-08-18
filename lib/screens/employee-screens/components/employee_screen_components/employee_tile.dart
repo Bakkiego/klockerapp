@@ -1,45 +1,47 @@
 import 'package:flutter/material.dart';
 
-class EmployeeTile extends StatefulWidget {
-  VoidCallback onTap;
-  String employeeName;
-  String employeeBranch;
-  String employeePosition;
-  Widget actionButton;
-  EmployeeTile(
+class EmployeeTile extends StatelessWidget {
+  final VoidCallback onTap;
+  final String employeeName;
+  final String employeeBranch;
+  final String employeePosition;
+  final String? employeeEmail; // 🚀 NEW
+  final Widget actionButton;
+
+  const EmployeeTile(
     this.onTap,
     this.employeeName,
     this.actionButton,
     this.employeeBranch,
     this.employeePosition, {
+    this.employeeEmail, // 🚀 NEW
     super.key,
   });
 
   @override
-  State<EmployeeTile> createState() => _EmployeeTileState();
-}
-
-class _EmployeeTileState extends State<EmployeeTile> {
-  late String itemTitle;
-  @override
   Widget build(BuildContext context) {
+    final email = employeeEmail?.trim() ?? '';
+
     return ListTile(
-      onTap: widget.onTap,
-      title: Text(widget.employeeName),
+      onTap: onTap,
+      title: Text(employeeName),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.employeeBranch,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          Text(
-            widget.employeePosition,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text(employeeBranch, style: Theme.of(context).textTheme.bodySmall),
+          Text(employeePosition, style: Theme.of(context).textTheme.bodySmall),
+          if (email.isNotEmpty)
+            Text(
+              email,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
         ],
       ),
-      trailing: widget.actionButton,
+      trailing: actionButton,
     );
   }
 }

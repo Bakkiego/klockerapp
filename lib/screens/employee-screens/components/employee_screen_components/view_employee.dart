@@ -321,6 +321,19 @@ class _ViewEmployeeState extends State<ViewEmployee> {
                                     fontSize: 13,
                                   ),
                                 ),
+                                if ((employee['email']?.toString().trim() ?? '')
+                                    .isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    employee['email'].toString(),
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                                 if (needsPermissions) ...[
                                   const SizedBox(height: 4),
                                   Row(

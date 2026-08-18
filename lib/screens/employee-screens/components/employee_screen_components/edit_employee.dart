@@ -200,6 +200,7 @@ class _EditEmployeeState extends State<EditEmployee> {
                           employee['job_title'] ??
                               employee['role'] ??
                               "No Position",
+                          employeeEmail: employee['email']?.toString(),
                         ),
                       ),
                     );
