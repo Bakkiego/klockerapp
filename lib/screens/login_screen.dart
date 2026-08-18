@@ -8,6 +8,8 @@ import 'package:klockerapp/providers/user_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:klockerapp/screens/pending_approval_screen.dart';
 
+import 'help-screens/change_password_screen.dart';
+
 class LoginScreen extends StatefulWidget {
   static String id = 'login_screen';
   const LoginScreen({super.key});
@@ -122,6 +124,23 @@ class _LoginScreenState extends State<LoginScreen> {
           hasCustomRole: customRoleId != null,
         );
 
+        if (userData['must_change_password'] == true) {
+          final changed = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ChangePasswordScreen(isForced: true),
+            ),
+          );
+
+          // PopScope blocks the back gesture, so this only happens if
+          // something unusual dismissed the screen. Fail closed.
+          if (changed != true) {
+            await Supabase.instance.client.auth.signOut();
+            if (mounted) setState(() => _isLoading = false);
+            return;
+          }
+        }
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => BottomNav(role: role)),
@@ -129,6 +148,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on AuthException catch (e) {
       _showFriendlyError(e.message, isAuthError: true);
+    } catch (e) {
+      _showFriendlyError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

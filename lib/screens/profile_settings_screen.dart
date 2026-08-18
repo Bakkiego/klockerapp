@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:intl/intl.dart';
 
+import 'help-screens/change_password_screen.dart';
+
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
 
@@ -586,7 +588,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
+              _buildAccountSection(context), // 🚀 add this
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -662,6 +666,54 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             side: const BorderSide(color: Color(0xFF00A36C)),
           ),
           child: const Text("Upload"),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "ACCOUNT",
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.withOpacity(0.2)),
+          ),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00A36C).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_outline,
+                color: Color(0xFF00A36C),
+                size: 20,
+              ),
+            ),
+            title: const Text("Change password"),
+            subtitle: const Text(
+              "Update the password you sign in with",
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+            ),
+          ),
         ),
       ],
     );
