@@ -51,9 +51,7 @@ class MyApp extends StatelessWidget {
       // 🚀 THE UPGRADED OS-BASED GATEKEEPER
       builder: (context, child) {
         // If they are on the Web AND using a Mobile OS (iOS/Android)...
-        if (kIsWeb &&
-            (defaultTargetPlatform == TargetPlatform.iOS ||
-                defaultTargetPlatform == TargetPlatform.android)) {
+        if (kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
           return const MobileAppWall(); // 🛑 Throw up the mobile wall!
         }
         // Otherwise, let them proceed normally
@@ -181,15 +179,9 @@ class MobileAppWall extends StatelessWidget {
                   color: const Color(0xFF4BAE4F),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Center(
-                  child: Text(
-                    "K",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 40,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset('images/logo.png', fit: BoxFit.cover),
                 ),
               ),
               const SizedBox(height: 32),
@@ -215,12 +207,12 @@ class MobileAppWall extends StatelessWidget {
               const SizedBox(height: 40),
 
               // 🚀 Replace these URLs with your actual App Store / Play Store links
-              _storeButton(
-                Icons.apple,
-                "Download on the",
-                "App Store",
-                () => launchUrl(Uri.parse('https://apps.apple.com')),
-              ),
+              // _storeButton(
+              //   Icons.apple,
+              //   "Download on the",
+              //   "App Store",
+              //   () => launchUrl(Uri.parse('https://apps.apple.com')),
+              // ),
               const SizedBox(height: 16),
               _storeButton(
                 Icons.shop, // Or FontAwesomeIcons.googlePlay
