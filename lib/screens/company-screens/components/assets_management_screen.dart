@@ -246,14 +246,68 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                   ),
                                 ),
                                 onPressed: () async {
-                                  // ... (Keep your onPressed logic exactly the same here) ...
+                                  final name = nameController.text.trim();
+                                  if (name.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Asset name is required"),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  if (_tenantId == null) return;
+
+                                  // Capture before awaiting — the dialog's
+                                  // context goes away once we pop.
+                                  final navigator = Navigator.of(context);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+                                  final desc = descController.text.trim();
+
+                                  try {
+                                    await SupabaseService().saveAsset(
+                                      assetId: existingAsset?['id'],
+                                      tenantId: _tenantId!,
+                                      name: name,
+                                      description: desc.isEmpty ? null : desc,
+                                      status: selectedStatus,
+                                      assignedTo: selectedEmployeeId,
+                                    );
+
+                                    navigator.pop();
+                                    await _fetchAssets();
+
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          existingAsset == null
+                                              ? "Asset added"
+                                              : "Asset updated",
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF00A36C,
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    debugPrint("Asset save error: $e");
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text("Error: $e"),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
                                 },
-                                // 🚀 WRAPPED IN FITTEDBOX TO PREVENT OVERFLOW
-                                child: const FittedBox(
+                                child: FittedBox(
                                   fit: BoxFit.scaleDown,
                                   child: Text(
-                                    "Assign Training",
-                                    style: TextStyle(
+                                    existingAsset == null
+                                        ? "Add Asset"
+                                        : "Save Changes",
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                     ),
