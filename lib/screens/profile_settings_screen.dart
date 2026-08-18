@@ -653,7 +653,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 )
               else
                 const Text(
-                  "No file attached",
+                  "No files attached",
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
             ],
