@@ -41,14 +41,19 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
       final branches = await _service.getBranchNames();
       final depts = await _service.getDepartmentNames();
       final roles = await _service.getTenantRoles();
+      final titles = await _service.getJobTitles();
 
       if (mounted) {
         setState(() {
           dataCollectorList.branchOptions = branches;
           dataCollectorList.deptOptions = depts;
-          dataCollectorList.jobTitleOptions = [];
+          dataCollectorList.jobTitleOptions = titles;
 
           final employeeData = widget.employee;
+          final currentTitle = employeeData['job_title'];
+          if (titles.contains(currentTitle)) {
+            dataCollectorList.selectedJobTitle = currentTitle;
+          }
 
           String? currentBranch = employeeData['branch'];
           if (branches.contains(currentBranch)) {
@@ -89,6 +94,108 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
   }
 
   DateTime _selectedDate = DateTime.now();
+
+  Future<void> _showCreateJobTitleDialog() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isSaving = false;
+
+    final created = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text("New job title"),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: "Title name",
+                hintText: "e.g. Chef, Supervisor, Driver",
+                prefixIcon: const Icon(Icons.badge_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: (v) {
+                final name = v?.trim() ?? '';
+                if (name.isEmpty) return 'Enter a title name';
+                if (name.length < 2) return 'That looks too short';
+                // The table has a unique constraint on (tenant_id,
+                // title_name), so catch duplicates before the round trip.
+                final exists = dataCollectorList.jobTitleOptions.any(
+                  (t) => t.toLowerCase() == name.toLowerCase(),
+                );
+                if (exists) return 'That title already exists';
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00A36C),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setDialogState(() => isSaving = true);
+
+                      final name = controller.text.trim();
+                      final messenger = ScaffoldMessenger.of(dialogContext);
+
+                      try {
+                        await _service.createJobTitle(name);
+                        Navigator.pop(dialogContext, name);
+                      } catch (e) {
+                        setDialogState(() => isSaving = false);
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text("Could not create title: $e"),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text("Create"),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    if (created == null || !mounted) return;
+
+    // Refresh the list from the server so we stay in step with the table,
+    // then select what was just created.
+    final titles = await _service.getJobTitles();
+    if (!mounted) return;
+    setState(() {
+      dataCollectorList.jobTitleOptions = titles;
+      dataCollectorList.selectedJobTitle = created;
+    });
+  }
 
   Future<void> _selectDate() async {
     final DateTime? pickedDate = await showDatePicker(
@@ -143,6 +250,7 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                   onRefresh: () {
                     setState(() {});
                   },
+                  onCreateJobTitle: _showCreateJobTitleDialog,
                 ),
                 const SizedBox(height: 24),
 
@@ -232,8 +340,7 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                                 .trim(),
                             'role': dataCollectorList.selectedRole,
                             'custom_role_id': _selectedRoleId,
-                            'job_title': _selectedRoleName,
-                            // 🚀 NEW: Save the ID Number!
+                            'job_title': dataCollectorList.selectedJobTitle,
                             'identification_number': _idNumberController.text
                                 .trim(),
                           };

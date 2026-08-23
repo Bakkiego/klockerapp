@@ -53,6 +53,7 @@ class DataCollectorList {
   List<ExpansionTile> getCompanyTileBody({
     required VoidCallback onDateTap,
     required VoidCallback onRefresh,
+    VoidCallback? onCreateJobTitle,
   }) {
     return [
       ExpansionTile(
@@ -77,7 +78,7 @@ class DataCollectorList {
             onChanged: (selectedValue) {
               // Now we actually save the choice!
               selectedDept = selectedValue;
-              onRefresh;
+              onRefresh();
             },
           ),
           const SizedBox(height: 16),
@@ -93,11 +94,11 @@ class DataCollectorList {
           ),
           KDropDownField(
             hintText: "Company Job Title (e.g. Chef)",
-            // If the manager hasn't created any titles yet, show a fallback
-            items: jobTitleOptions.isEmpty
-                ? ['No Titles Created']
-                : jobTitleOptions,
+            icon: Icons.badge_outlined,
+            items: jobTitleOptions,
             value: selectedJobTitle,
+            onCreateNew: onCreateJobTitle, // 🚀 NEW
+            createLabel: "Create a new job title",
             onChanged: (selectedValue) {
               selectedJobTitle = selectedValue;
               onRefresh();
