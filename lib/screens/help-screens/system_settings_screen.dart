@@ -17,7 +17,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   bool _isFetchingLocation = false;
   bool _isLoadingData = true;
 
-  String? _selectedTimezone;
   String? _selectedCurrency;
   String? _selectedLanguage;
   Map<String, dynamic>? _tenantData;
@@ -34,7 +33,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       if (data != null && mounted) {
         setState(() {
           _tenantData = data;
-          _selectedTimezone = data['timezone'] ?? 'SAST';
           _selectedCurrency = data['currency'] ?? 'ZAR';
           _selectedLanguage = data['language'] ?? 'English';
           _isLoadingData = false;
@@ -54,7 +52,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
 
     // Smooth local updates immediately
     setState(() {
-      if (type == 'tz') _selectedTimezone = value;
       if (type == 'curr') _selectedCurrency = value;
       if (type == 'lang') _selectedLanguage = value;
     });
@@ -66,7 +63,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
         phone: _tenantData!['company_phone'] ?? '',
         startTime: _tenantData!['start_time'] ?? '09:00 AM',
         endTime: _tenantData!['end_time'] ?? '05:00 PM',
-        timezone: _selectedTimezone ?? 'SAST',
         currency: _selectedCurrency ?? 'ZAR',
         language: _selectedLanguage ?? 'English',
       );
@@ -252,24 +248,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
 
           const SizedBox(height: 16),
           const Divider(),
-          const SizedBox(height: 16),
-
-          DropdownButtonFormField<String>(
-            value: _selectedTimezone,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'Company Core TimeZone',
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: "SAST",
-                child: Text("Johannesburg (SAST)"),
-              ),
-              DropdownMenuItem(value: "UK", child: Text("London (GMT)")),
-              DropdownMenuItem(value: "Pacific", child: Text("Pacific (PST)")),
-            ],
-            onChanged: (val) => _updateSystemConfig('tz', val!),
-          ),
           const SizedBox(height: 16),
 
           // --- THE NEW CURRENCY PICKER ---

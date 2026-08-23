@@ -3057,7 +3057,6 @@ class SupabaseService {
     required String phone,
     required String startTime,
     required String endTime,
-    required String timezone,
     required String currency,
     required String language,
     String? logoUrl,
@@ -3078,7 +3077,6 @@ class SupabaseService {
       'company_phone': phone,
       'start_time': startTime,
       'end_time': endTime,
-      'timezone': timezone,
       'currency': currency,
       'language': language,
     };
@@ -4536,12 +4534,12 @@ class SupabaseService {
     // loses access to their encrypted chat history.
     //
     // Uncomment and adjust once the KeyService API is confirmed:
-    //
-    // await KeyService.rewrapForNewPassword(
-    //   user.id,
-    //   currentPassword.trim(),
-    //   newPassword.trim(),
-    // );
+
+    await KeyService.rewrapOnPasswordChange(
+      user.id,
+      currentPassword.trim(),
+      newPassword.trim(),
+    );
     //
     // If it throws, we must NOT proceed to step 3 — better to fail the
     // password change than to silently orphan the keys.
