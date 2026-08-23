@@ -102,7 +102,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         phone: _phoneController.text.trim(),
         startTime: _startTimeStr ?? '09:00 AM',
         endTime: _endTimeStr ?? '05:00 PM',
-        timezone: currentSettings?['timezone'] ?? 'SAST',
         currency: currentSettings?['currency'] ?? 'ZAR',
         language: currentSettings?['language'] ?? 'English',
         logoUrl: updatedLogoUrl,
