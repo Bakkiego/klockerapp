@@ -11,7 +11,7 @@ import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import 'package:klockerapp/supabase/google_calendar_service.dart';
 import 'package:klockerapp/screens/employee-screens/components/time_management_components/attendance_summary.dart';
 import 'package:klockerapp/screens/floating_clock_button.dart';
-import 'package:klockerapp/screens/help-screens/profile_settings_screen.dart';
+import 'package:klockerapp/screens/profile_settings_screen.dart';
 import 'dart:async';
 import 'help-screens/social_settings_screen.dart';
 

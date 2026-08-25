@@ -418,20 +418,39 @@ class SupabaseService {
   // BRANCH LOCATION SETUP (ADMIN)
   // ==========================================
 
+  Future<String> _myTenantId() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception("User not logged in");
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+    return profile['tenant_id'] as String;
+  }
+
   // 1. Fetch the branches so the Admin can select WHICH branch they are standing in
   Future<List<Map<String, dynamic>>> getAdminBranches() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
 
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
     final List<dynamic> data = await _supabase
         .from('branches')
-        .select('*') // Getting '*' allows us to check 'gps_lat' in the UI
+        .select('*')
+        .eq('tenant_id', profile['tenant_id'] as Object)
         .order('name', ascending: true);
 
     return List<Map<String, dynamic>>.from(data);
   }
 
   // Update a branch name
+
   Future<void> updateBranchName(
     String branchId,
     String newName,
@@ -440,12 +459,17 @@ class SupabaseService {
     await _supabase
         .from('branches')
         .update({'name': newName.trim(), 'address': address.trim()})
-        .eq('id', branchId);
+        .eq('id', branchId)
+        .eq('tenant_id', await _myTenantId());
   }
 
   // Delete a branch
   Future<void> deleteBranch(String branchId) async {
-    await _supabase.from('branches').delete().eq('id', branchId);
+    await _supabase
+        .from('branches')
+        .delete()
+        .eq('id', branchId)
+        .eq('tenant_id', await _myTenantId());
   }
 
   // 2. Create a new branch (The missing piece)
@@ -482,9 +506,10 @@ class SupabaseService {
           'gps_lat': lat,
           'gps_long': lng,
           'radius_meters': radiusMeters,
-          'address': newAddress.trim(), // e.g., 100 meters
+          'address': newAddress.trim(),
         })
-        .eq('id', branchId);
+        .eq('id', branchId)
+        .eq('tenant_id', await _myTenantId());
   }
   // ==========================================
   // EMPLOYEE ATTENDANCE HISTORY
