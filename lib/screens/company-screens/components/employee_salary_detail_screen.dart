@@ -123,9 +123,9 @@ class EmployeeSalaryDetailScreen extends StatelessWidget {
             const Divider(),
 
             _buildDetailRow(
-              icon: Icons.badge_outlined,
-              label: 'Employee ID',
-              value: employeeDetails['id'] ?? 'N/A',
+              icon: Icons.email_outlined,
+              label: 'Email',
+              value: employeeDetails['email'] ?? 'No email on file',
             ),
 
             _buildDetailRow(

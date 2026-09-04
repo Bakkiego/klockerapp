@@ -328,6 +328,9 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                     onPressed: () async {
                       if (dataCollectorList.formKey.currentState!.validate()) {
                         try {
+                          final branchId = await _service.getBranchIdByName(
+                            dataCollectorList.selectedBranch,
+                          );
                           final Map<String, dynamic> employeeUpdates = {
                             'full_name': dataCollectorList.nameController.text
                                 .trim(),
@@ -335,6 +338,7 @@ class _EditEmployeeDetailScreen extends State<EditEmployeeDetailsScreen> {
                             'address': dataCollectorList.addressController.text
                                 .trim(),
                             'dept_name': dataCollectorList.selectedDept,
+                            'branch_id': branchId,
                             'branch': dataCollectorList.selectedBranch,
                             'hire_date': dataCollectorList.dateController.text
                                 .trim(),
