@@ -60,6 +60,14 @@ class UserProvider with ChangeNotifier {
     _companyName = userData['company_name'] ?? userData['tenants']?['name'];
 
     _avatarUrl = userData['avatar_url'];
+    final tenantCurrency =
+        userData['currency'] ?? userData['tenants']?['currency'];
+    if (tenantCurrency != null) {
+      final currency = CurrencyService().findByCode(tenantCurrency.toString());
+      if (currency != null) {
+        _currencySymbol = currency.symbol;
+      }
+    }
     notifyListeners();
 
     // Start listening for instant upgrades the moment they open the app!

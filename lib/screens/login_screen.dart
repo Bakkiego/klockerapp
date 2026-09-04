@@ -110,8 +110,11 @@ class _LoginScreenState extends State<LoginScreen> {
         context.read<UserProvider>().setUserProfile(userData);
         context.read<UserProvider>().setChatReady(
           userData['chat_ready'] ?? true,
-        ); // 🚀 new
-        // 🚀 THE NEW INJECTION: Fetch and set permissions on manual login
+        );
+        final tenantCurrency = userData['currency'];
+        if (tenantCurrency != null) {
+          context.read<UserProvider>().setCurrencyFromCode(tenantCurrency);
+        }
         final String legacyRole = userData['role'] ?? 'employee';
         final String? customRoleId = userData['custom_role_id'];
 

@@ -81,10 +81,14 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
       builder: (context, child) {
+        final base = Theme.of(context);
         return Theme(
-          data: Theme.of(
-            context,
-          ).copyWith(colorScheme: const ColorScheme.light(primary: Colors.red)),
+          data: base.copyWith(
+            colorScheme: base.colorScheme.copyWith(
+              primary: Colors.red,
+              onPrimary: Colors.white,
+            ),
+          ),
           child: child!,
         );
       },
@@ -94,7 +98,6 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     }
   }
 
-  // --- DYNAMIC FILTERING LOGIC ---
   // --- DYNAMIC FILTERING LOGIC ---
   List<Map<String, dynamic>> _getFilteredExpenses({
     required bool showOnlyMyExpenses,

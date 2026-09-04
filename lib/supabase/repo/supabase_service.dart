@@ -154,16 +154,16 @@ class SupabaseService {
   Future<Map<String, dynamic>> getUserProfile(String userId) async {
     final response = await _supabase
         .from('profiles')
-        .select('*, tenants(name, subscription_tier)')
+        .select('*, tenants(name, subscription_tier, currency)')
         .eq('id', userId)
-        .maybeSingle(); // 🚀 Prevents the JSON crash!
+        .maybeSingle();
 
     if (response == null) throw Exception("Profile not found.");
 
     // 🚀 Flatten the data so the app can read it instantly
     if (response['tenants'] != null) {
       response['company_name'] = response['tenants']['name'];
-      response['subscription_tier'] = response['tenants']['subscription_tier'];
+      response['currency'] = response['tenants']['currency'];
     }
 
     return response;
@@ -364,6 +364,31 @@ class SupabaseService {
 
   Future<void> deleteEmployee(String id) async {
     await _supabase.from('profiles').delete().eq('id', id);
+  }
+
+  /// Resolves a branch name to its id within the caller's tenant.
+  /// Returns null when no branch matches — callers should decide whether
+  /// that's an error or acceptable.
+  Future<String?> getBranchIdByName(String? branchName) async {
+    if (branchName == null || branchName.trim().isEmpty) return null;
+
+    final user = _supabase.auth.currentUser;
+    if (user == null) return null;
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final row = await _supabase
+        .from('branches')
+        .select('id')
+        .eq('tenant_id', profile['tenant_id'] as Object)
+        .eq('name', branchName.trim())
+        .maybeSingle();
+
+    return row?['id'] as String?;
   }
 
   Future<List<String>> getBranchNames() async {
@@ -1821,12 +1846,13 @@ class SupabaseService {
       'transfer_date': transferDate.toIso8601String().split('T')[0],
       'processed_by': user.id,
     });
-
+    final newBranchId = await getBranchIdByName(newBranchName);
     // 2. Update the profile 'branch' column (String)
     await _supabase
         .from('profiles')
         .update({
           'branch': newBranchName,
+          'branch_id': newBranchId,
         }) // Updated to match your profiles table column
         .eq('id', employeeId);
   }
@@ -2176,6 +2202,7 @@ class SupabaseService {
         .select('''
           id,
           full_name,
+          email,
           tax_number,
           salary_configs (
             payroll_type,
@@ -2222,6 +2249,7 @@ class SupabaseService {
         return {
           'id': emp['id'],
           'name': emp['full_name'] ?? 'Unknown Employee',
+          'email': emp['email'],
           'payrollType': config?['payroll_type'] ?? 'Unconfigured',
           'grossSalary': gross.toStringAsFixed(2),
           'netSalary': netSalary.toStringAsFixed(2),
@@ -4579,5 +4607,43 @@ class SupabaseService {
         .from('profiles')
         .update({'must_change_password': false})
         .eq('id', user.id);
+  }
+
+  Future<int> getMonthlyWorkedMinutes() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return 0;
+
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+
+    final rows = await _supabase
+        .from('attendance')
+        .select('standard_minutes, overtime_minutes, clock_in, clock_out')
+        .eq('profile_id', user.id)
+        .filter('deleted_at', 'is', null)
+        .gte('clock_in', monthStart.toUtc().toIso8601String());
+
+    int total = 0;
+    for (final row in List<Map<String, dynamic>>.from(rows)) {
+      // Still clocked in — the screen counts this live instead.
+      if (row['clock_out'] == null) continue;
+
+      final standard = (row['standard_minutes'] ?? 0) as int;
+      final overtime = (row['overtime_minutes'] ?? 0) as int;
+
+      if (standard > 0 || overtime > 0) {
+        total += standard + overtime;
+      } else {
+        // Fallback for older rows written before clock_out_v2 populated
+        // the minute columns. Derive from the timestamps instead.
+        final inAt = DateTime.tryParse(row['clock_in'].toString());
+        final outAt = DateTime.tryParse(row['clock_out'].toString());
+        if (inAt != null && outAt != null) {
+          total += outAt.difference(inAt).inMinutes;
+        }
+      }
+    }
+
+    return total < 0 ? 0 : total;
   }
 }

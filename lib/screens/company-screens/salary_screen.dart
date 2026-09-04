@@ -88,10 +88,9 @@ class _SalaryScreenState extends State<SalaryScreen> {
                     itemCount: _employees.length,
                     itemBuilder: (context, index) {
                       final employee = _employees[index];
-                      final String rawId = employee['id']?.toString() ?? '';
-                      final String displayId = rawId.length > 5
-                          ? '${rawId.substring(0, 5)}...'
-                          : rawId;
+                      final String email = (employee['email'] ?? '')
+                          .toString()
+                          .trim();
 
                       return GestureDetector(
                         onTap: () async {
@@ -133,11 +132,15 @@ class _SalaryScreenState extends State<SalaryScreen> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'ID: #$displayId',
+                                          email.isEmpty
+                                              ? 'No email on file'
+                                              : email,
                                           style: TextStyle(
                                             color: Colors.grey[600],
                                             fontSize: 12,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 4),
                                         Chip(
