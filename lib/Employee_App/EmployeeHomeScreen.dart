@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart'; // <-- New import for date formatting
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
+import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart'; // 🚀 Needed for the bell's realtime stream
 
 // 🚀 IMPORT PROFILE SETTINGS & NOTIFICATIONS (Verify paths match your project!)
@@ -25,11 +26,34 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   bool _hasShiftToday = false;
   String _assignedBranchName = "Loading...";
   String _nextShiftDisplay = "Loading...";
+  int _monthlyMinutes = 0; // completed shifts this month
+  int _loadedMonth = 0; // guards the month rollover
+  Timer? _tickTimer;
 
   @override
   void initState() {
     super.initState();
     _loadInitialState();
+
+    // Recomputes the label once a minute. Only rebuilds while a shift is
+    // running, so it costs nothing when the employee is clocked out.
+    _tickTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+
+      // Crossing into a new month mid-session: reload so the total resets.
+      if (DateTime.now().month != _loadedMonth) {
+        _loadInitialState();
+        return;
+      }
+
+      if (_activeShift != null) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tickTimer?.cancel();
+    super.dispose();
   }
 
   // --- 1. CHECK IF ALREADY CLOCKED IN & FETCH NEXT SHIFT ---
@@ -38,7 +62,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     try {
       // 1. Check if they are clocked in
       final shift = await SupabaseService().getActiveShift();
-
+      final monthlyMinutes = await SupabaseService().getMonthlyWorkedMinutes();
       // 2. Look up the name of their Assigned Branch
       final branch = await SupabaseService().getAssignedBranch();
 
@@ -99,6 +123,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           _assignedBranchName = branch?['name'] ?? "No Assigned Branch";
           _nextShiftDisplay = formattedNextShift;
           _hasShiftToday = foundShiftToday;
+          _monthlyMinutes = monthlyMinutes;
+          _loadedMonth = DateTime.now().month;
         });
       }
     } catch (e) {
@@ -113,6 +139,25 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Completed minutes this month, plus the live elapsed time of the
+  /// current shift if one is running.
+  String get _hoursThisMonth {
+    int minutes = _monthlyMinutes;
+
+    final activeStart = _activeShift?['clock_in'];
+    if (activeStart != null) {
+      final start = DateTime.tryParse(activeStart.toString())?.toLocal();
+      if (start != null) {
+        final elapsed = DateTime.now().difference(start).inMinutes;
+        if (elapsed > 0) minutes += elapsed;
+      }
+    }
+
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    return hours > 0 ? "${hours}h ${mins}m" : "${mins}m";
   }
 
   // --- 2. THE STRICT GEOFENCE ENGINE ---
@@ -462,8 +507,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           Expanded(
             child: _summaryStat(
               context,
-              label: "Total Hours",
-              value: "38.5h", // Placeholder for future feature
+              label: "Hours This Month",
+              value: _hoursThisMonth, // Placeholder for future feature
               icon: Icons.timer_outlined,
             ),
           ),
