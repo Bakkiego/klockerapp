@@ -73,8 +73,7 @@ class _AwardsScreenState extends State<AwardsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
+    final scheme = theme.colorScheme;
     List<MenuExpansionOBJ> awardsList = [
       MenuExpansionOBJ(
         title: 'Manager of The Year',
@@ -93,10 +92,7 @@ class _AwardsScreenState extends State<AwardsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Assign Awards',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Assign Awards'),
         elevation: 0,
         centerTitle: true,
       ),
@@ -110,14 +106,7 @@ class _AwardsScreenState extends State<AwardsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. AWARD SELECTION
-                Text(
-                  "Award Type",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
+                Text("Award Type", style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 MenuExpansionTile(
                   awardsList,
@@ -128,30 +117,20 @@ class _AwardsScreenState extends State<AwardsScreen> {
                 const SizedBox(height: 25),
 
                 // 2. SEARCH BAR (Styling matched to ViewEmployee)
-                Text(
-                  "Search Employee",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
+                Text("Search Employee", style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 SearchBar(
                   elevation: WidgetStateProperty.all(0),
-                  backgroundColor: WidgetStateProperty.all(
-                    isDark ? Colors.grey[900] : Colors.white,
-                  ),
                   hintText: "Enter employee name...",
                   onChanged: (value) => _searchEmployees(value),
                   padding: WidgetStateProperty.all(
                     const EdgeInsets.symmetric(horizontal: 16),
                   ),
-                  leading: const Icon(Icons.search, color: Colors.grey),
+                  leading: Icon(Icons.search, color: scheme.onSurfaceVariant),
                   shape: WidgetStateProperty.all(
                     RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                      side: BorderSide(color: scheme.outline),
                     ),
                   ),
                   trailing: [
@@ -161,10 +140,7 @@ class _AwardsScreenState extends State<AwardsScreen> {
                         child: SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF00A36C),
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       ),
                   ],
@@ -173,12 +149,10 @@ class _AwardsScreenState extends State<AwardsScreen> {
                 const SizedBox(height: 25),
 
                 // 3. RESULTS
-                const Text(
+                Text(
                   "Search Results",
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -202,13 +176,9 @@ class _AwardsScreenState extends State<AwardsScreen> {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.grey[900]?.withOpacity(0.5)
-                                    : Colors.white,
+                                color: scheme.surface,
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: Colors.grey.withOpacity(0.1),
-                                ),
+                                border: Border.all(color: scheme.outline),
                               ),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -219,14 +189,7 @@ class _AwardsScreenState extends State<AwardsScreen> {
                                   emp['full_name'] ?? "Unknown",
                                   TextButton(
                                     onPressed: () => _assignAward(emp),
-                                    child: const Text(
-                                      "Assign",
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF00A36C),
-                                      ),
-                                    ),
+                                    child: const Text("Assign"),
                                   ),
                                   emp['branch'] ?? "Main Branch",
                                   emp['role'] ?? "Staff",
