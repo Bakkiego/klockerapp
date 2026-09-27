@@ -141,6 +141,16 @@ ThemeData buildKTheme({
       ),
     ),
 
+    searchBarTheme: SearchBarThemeData(
+      backgroundColor: WidgetStatePropertyAll(scheme.surface),
+      elevation: const WidgetStatePropertyAll(0),
+      side: WidgetStatePropertyAll(BorderSide(color: border)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      hintStyle: WidgetStatePropertyAll(TextStyle(color: muted)),
+    ),
+
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: isDark ? KPalette.darkSurfaceVariant : scheme.surface,
