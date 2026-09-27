@@ -271,17 +271,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-                        Expanded(
-                          flex: 2,
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 650),
-                              child: SearchBar(
-                                // ... (Keep your existing SearchBar code here)
-                              ),
-                            ),
-                          ),
-                        ),
+                        // Expanded(
+                        //   flex: 2,
+                        //   child: Center(
+                        //     child: ConstrainedBox(
+                        //       constraints: const BoxConstraints(maxWidth: 650),
+                        //       // child: SearchBar(
+                        //       //   // ... (Keep your existing SearchBar code here)
+                        //       // ),
+                        //     ),
+                        //   ),
+                        // ),
                         Expanded(
                           flex: 1,
                           child: Align(

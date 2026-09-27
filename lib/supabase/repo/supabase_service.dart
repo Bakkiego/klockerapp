@@ -10,6 +10,75 @@ import '../../services/chat_crypto.dart';
 class SupabaseService {
   final _supabase = Supabase.instance.client;
 
+  // ============================================================
+  // Seat limits — app side.
+  //
+  // The database trigger is the real guard. This code exists so the user
+  // sees the limit before they fill in a whole form, and so the error
+  // message reads like a product rather than a Postgres exception.
+  // ============================================================
+
+  // ------------------------------------------------------------
+  // 1. ADD TO supabase_service.dart
+  // ------------------------------------------------------------
+
+  /// Current seat usage and limits for the signed-in user's tenant.
+  ///
+  /// Returns: tier, employees_used, admins_used, max_employees, max_admins.
+  /// A null max means unlimited on that plan.
+  Future<Map<String, dynamic>?> getSeatUsage() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return null;
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final tenantId = profile['tenant_id'];
+    if (tenantId == null) return null;
+
+    final result = await _supabase.rpc(
+      'tenant_seat_usage',
+      params: {'p_tenant_id': tenantId},
+    );
+
+    // The function returns a set; take the single row.
+    if (result is List && result.isNotEmpty) {
+      return Map<String, dynamic>.from(result.first);
+    }
+    return null;
+  }
+
+  /// True when another seat of the given kind is available.
+  /// Cheap pre-check for enabling or disabling an "Add" button.
+  Future<bool> hasSeatAvailable({required bool forAdmin}) async {
+    final usage = await getSeatUsage();
+    if (usage == null) return false;
+
+    final max = forAdmin ? usage['max_admins'] : usage['max_employees'];
+    if (max == null) return true; // unlimited
+
+    final used = forAdmin ? usage['admins_used'] : usage['employees_used'];
+    return (used as int) < (max as int);
+  }
+
+  /// Turns the trigger's exception into something worth showing a user.
+  ///
+  /// The trigger raises with a complete sentence already, so this mostly
+  /// strips Postgres framing. Call it from the catch block wherever a
+  /// profile is created or a role is changed.
+  String describeSeatError(Object error) {
+    final text = error.toString();
+    if (text.contains('plan allows')) {
+      // Pull out the message the trigger raised.
+      final match = RegExp(r'Your .+? plan allows [^"}]+').firstMatch(text);
+      if (match != null) return match.group(0)!.trim();
+    }
+    return text.replaceAll('Exception: ', '');
+  }
+
   // ==========================================
   // --- IN-APP NOTIFICATIONS ENGINE ---
   // ==========================================
@@ -281,7 +350,9 @@ class SupabaseService {
     //get the user's profile AND billing status
     final data = await _supabase
         .from('profiles')
-        .select('*, tenants(name, subscription_tier)') //  Fetch the tier!
+        .select(
+          '*, tenants(name, subscription_tier, currency)',
+        ) //  Fetch the tier!
         .eq('id', user.id)
         .maybeSingle(); //  Prevents the JSON crash
 

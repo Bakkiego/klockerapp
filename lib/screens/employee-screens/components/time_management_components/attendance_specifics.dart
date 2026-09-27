@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
+import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:provider/provider.dart'; // 🚀 Added for Permissions
 import 'package:klockerapp/providers/user_provider.dart'; // 🚀 Added for Permissions
 
@@ -118,7 +119,7 @@ class _AttendanceSpecificsState extends State<AttendanceSpecifics> {
                       ),
                     ],
                   ),
-                  _buildStatusBadge(status),
+                  KStatusBadge(status: status),
                 ],
               ),
 
@@ -193,46 +194,6 @@ class _AttendanceSpecificsState extends State<AttendanceSpecifics> {
   String _formatTime(String iso) {
     final DateTime dt = DateTime.parse(iso).toLocal();
     return DateFormat('h:mm a').format(dt);
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    switch (status) {
-      case 'Present':
-        color = Colors.green;
-        break;
-      case 'Late':
-        color = Colors.orange;
-        break;
-      case 'Absent':
-        color = Colors.red;
-        break;
-      case 'overtime_pending':
-        color = Colors.blue;
-        break;
-      case 'early_leave_pending':
-        color = Colors.purple;
-        break;
-      default:
-        color = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Text(
-        status.replaceAll('_', ' ').toUpperCase(),
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
   }
 
   Widget _buildResolutionPanel({

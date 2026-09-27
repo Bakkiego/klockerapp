@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/screens/employee-screens/components/employee_screen_components/view_employee_detail.dart';
+import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:provider/provider.dart';
 import '../../../../providers/user_provider.dart';
 import '../../../../models/app_enums.dart';
 import '../../../../supabase/repo/supabase_service.dart';
 import 'email_service.dart';
+import 'package:klockerapp/screens/employee-screens/components/seat_usage_banner.dart';
 
 class ViewEmployee extends StatefulWidget {
   const ViewEmployee({super.key});
@@ -96,43 +98,103 @@ class _ViewEmployeeState extends State<ViewEmployee> {
     String newStatus,
   ) async {
     final String employeeId = employee['id'];
+    final String employeeEmail = (employee['email'] ?? '').toString().trim();
+    final String employeeName = employee['full_name'] ?? 'Employee';
 
     try {
+      // 1. Database first. If the seat-limit trigger rejects this, we
+      //    throw here and nothing below runs — no state change, no email.
       await _service.updateEmployeeApprovalStatus(employeeId, newStatus);
 
-      setState(() {
-        final index = _allEmployees.indexWhere((e) => e['id'] == employeeId);
-        if (index != -1) {
-          _allEmployees[index]['approval_status'] = newStatus;
-        }
-        _applyFilters();
-      });
+      // 2. Only now is the change real, so reflect it locally.
+      if (mounted) {
+        setState(() {
+          final index = _allEmployees.indexWhere((e) => e['id'] == employeeId);
+          if (index != -1) {
+            _allEmployees[index]['approval_status'] = newStatus;
+          }
+          _applyFilters();
+        });
+      }
+
+      // 3. Email last, and only on approval.
+      bool emailSent = false;
+      String? emailProblem;
 
       if (newStatus == 'approved') {
-        await EmailService.sendApprovalEmail(
-          employeeEmail: employee['email'] ?? '',
-          employeeName: employee['full_name'] ?? 'Employee',
-        );
+        if (employeeEmail.isEmpty) {
+          emailProblem = 'no email address on file';
+        } else {
+          emailSent = await EmailService.sendApprovalEmail(
+            employeeEmail: employeeEmail,
+            employeeName: employeeName,
+          );
+          if (!emailSent) emailProblem = 'the email could not be sent';
+        }
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              newStatus == 'approved'
-                  ? "Employee approved & email sent!"
-                  : "Employee rejected!",
+      if (!mounted) return;
+
+      // Don't claim an email was sent when it wasn't — sendApprovalEmail
+      // returns false rather than throwing, so the old message was
+      // unconditional.
+      final String message;
+      final Color colour;
+
+      if (newStatus == 'approved') {
+        if (emailSent) {
+          message = 'Employee approved and notified by email.';
+          colour = const Color(0xFF00A36C);
+        } else {
+          message =
+              'Employee approved, but $emailProblem. '
+              'Let them know they can now sign in.';
+          colour = Colors.orange;
+        }
+      } else {
+        message = 'Employee rejected.';
+        colour = Colors.orange;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: colour,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Status change error: $e');
+      if (!mounted) return;
+
+      final friendly = _service.describeSeatError(e);
+
+      // A plan limit needs an action from them, not just an
+      // acknowledgement, so it gets a dialog rather than a snackbar.
+      if (friendly.contains('plan allows')) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            backgroundColor: newStatus == 'approved'
-                ? Colors.green
-                : Colors.red,
+            title: const Text('Plan limit reached'),
+            content: Text(friendly),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
           ),
         );
-      }
-    } catch (e) {
-      if (mounted) {
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(friendly),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -179,7 +241,8 @@ class _ViewEmployeeState extends State<ViewEmployee> {
             ],
           ),
           const SizedBox(height: 16),
-
+          const SeatUsageBanner(),
+          const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -299,7 +362,7 @@ class _ViewEmployeeState extends State<ViewEmployee> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              _buildStatusBadge(status),
+                              KStatusBadge(status: status),
                             ],
                           ),
                           subtitle: Padding(
@@ -412,43 +475,6 @@ class _ViewEmployeeState extends State<ViewEmployee> {
                   ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color bgColor;
-    Color textColor;
-
-    switch (status.toLowerCase()) {
-      case 'pending':
-        bgColor = Colors.orange.withOpacity(0.1);
-        textColor = Colors.orange;
-        break;
-      case 'rejected':
-        bgColor = Colors.red.withOpacity(0.1);
-        textColor = Colors.red;
-        break;
-      case 'approved':
-      default:
-        bgColor = Colors.green.withOpacity(0.1);
-        textColor = Colors.green;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: TextStyle(
-          color: textColor,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

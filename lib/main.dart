@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:klockerapp/utils/themes.dart';
+import 'package:klockerapp/screens/theme_preview_screen.dart';
+import 'package:klockerapp/utils/custom_theme/k_theme.dart';
 import 'package:klockerapp/screens/login_screen.dart';
 import 'package:klockerapp/components/bottom_nav.dart';
 import 'package:klockerapp/supabase/supabase_config.dart';
@@ -34,33 +35,33 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+  static final themeMode = ValueNotifier(ThemeMode.system);
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
   Widget build(BuildContext context) {
-    final session = Supabase.instance.client.auth.currentSession;
-
-    return MaterialApp(
-      title: 'KlockerApp',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
-      theme: KlockerappTheme.lightTheme,
-      darkTheme: KlockerappTheme.darkTheme,
-
-      // 🚀 THE UPGRADED OS-BASED GATEKEEPER
-      builder: (context, child) {
-        // If they are on the Web AND using a Mobile OS (iOS/Android)...
-        if (kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-          return const MobileAppWall(); // 🛑 Throw up the mobile wall!
-        }
-        // Otherwise, let them proceed normally
-        return child!;
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: MyApp.themeMode,
+      builder: (context, mode, _) {
+        final session = Supabase.instance.client.auth.currentSession;
+        return MaterialApp(
+          title: 'KlockerApp',
+          debugShowCheckedModeBanner: false,
+          themeMode: mode,
+          theme: KTheme.light,
+          darkTheme: KTheme.dark,
+          routes: {'/theme': (_) => const ThemePreviewScreen()},
+          home: session != null
+              ? AuthGate(userId: session.user.id)
+              : const LoginScreen(),
+        );
       },
-
-      home: session != null
-          ? AuthGate(userId: session.user.id)
-          : const LoginScreen(),
     );
   }
 }
@@ -127,11 +128,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // The Security Locks
@@ -164,8 +161,10 @@ class MobileAppWall extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
@@ -176,7 +175,7 @@ class MobileAppWall extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4BAE4F),
+                  color: scheme.primary,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: ClipRRect(
@@ -185,37 +184,26 @@ class MobileAppWall extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 32),
-              const Text(
+              Text(
                 "KLOCKER is better in the app.",
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
-                ),
+                style: theme.textTheme.displaySmall,
               ),
               const SizedBox(height: 16),
-              const Text(
-                "To ensure the best experience with time-tracking, offline sync, and instant notifications, mobile browser access is disabled. Please download the official Klocker app.",
+              Text(
+                "To ensure the best experience with time-tracking, offline "
+                "sync, and instant notifications, mobile browser access is "
+                "disabled. Please download the official Klocker app.",
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black54,
-                  height: 1.5,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 40),
-
-              // 🚀 Replace these URLs with your actual App Store / Play Store links
-              // _storeButton(
-              //   Icons.apple,
-              //   "Download on the",
-              //   "App Store",
-              //   () => launchUrl(Uri.parse('https://apps.apple.com')),
-              // ),
               const SizedBox(height: 16),
               _storeButton(
-                Icons.shop, // Or FontAwesomeIcons.googlePlay
+                context,
+                Icons.shop,
                 "GET IT ON",
                 "Google Play",
                 () => launchUrl(Uri.parse('https://play.google.com')),
@@ -228,11 +216,14 @@ class MobileAppWall extends StatelessWidget {
   }
 
   Widget _storeButton(
+    BuildContext context,
     IconData icon,
     String topText,
     String bottomText,
     VoidCallback onTap,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -240,39 +231,28 @@ class MobileAppWall extends StatelessWidget {
         width: 240,
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: scheme.onSurface,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 8,
-              offset: Offset(0, 4),
-            ),
-          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: Colors.white, size: 36),
+            Icon(icon, color: scheme.surface, size: 36),
             const SizedBox(width: 16),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   topText,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 10,
-                    letterSpacing: 0.5,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.surface.withOpacity(0.7),
                   ),
                 ),
                 Text(
                   bottomText,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: scheme.surface),
                 ),
               ],
             ),

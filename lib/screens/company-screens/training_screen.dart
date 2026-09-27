@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import 'package:intl/intl.dart';
@@ -545,7 +546,7 @@ class _TrainingDesignatorScreenState extends State<TrainingDesignatorScreen> {
                       ),
                     ),
                   ),
-                  _buildStatusBadge(status),
+                  KStatusBadge(status: status),
                 ],
               ),
               const SizedBox(height: 16),
@@ -638,32 +639,6 @@ class _TrainingDesignatorScreenState extends State<TrainingDesignatorScreen> {
             style: TextStyle(color: Colors.grey),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    final (bgColor, textColor) = switch (status) {
-      'completed' => (Colors.green.withOpacity(0.1), Colors.green),
-      'in_progress' => (Colors.orange.withOpacity(0.1), Colors.orange),
-      'extended' => (Colors.purple.withOpacity(0.1), Colors.purple),
-      'cancelled' => (Colors.red.withOpacity(0.1), Colors.red),
-      _ => (Colors.blue.withOpacity(0.1), Colors.blue),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status.replaceAll('_', ' ').toUpperCase(),
-        style: TextStyle(
-          color: textColor,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

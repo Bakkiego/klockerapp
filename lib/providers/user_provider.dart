@@ -51,6 +51,10 @@ class UserProvider with ChangeNotifier {
   String get currencySymbol => _currencySymbol;
 
   void setUserProfile(Map<String, dynamic> userData) {
+    debugPrint(
+      'setUserProfile currency: '
+      '${userData['currency']} / ${userData['tenants']?['currency']}',
+    );
     _role = userRole.fromString(userData['role']);
     _tenantId = userData['tenant_id'];
     _fullName = userData['full_name'];

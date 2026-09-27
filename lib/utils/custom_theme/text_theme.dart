@@ -1,131 +1,112 @@
 import 'package:flutter/material.dart';
 
+/// Typography only — size, weight, spacing.
+///
+/// Deliberately carries NO colour. Colour comes from `ColorScheme`, which
+/// means one definition serves both light and dark instead of two parallel
+/// copies that have to be kept in step.
+///
+/// This replaces the previous light/dark pair where every one of the 12
+/// styles hardcoded `Colors.black` or `Colors.white`. If a style needs a
+/// non-default colour at a call site, use `.copyWith(color: ...)` there.
 class KAppTextTheme {
   KAppTextTheme._();
 
-  static TextTheme lightTextTheme = TextTheme(
-    headlineLarge: const TextStyle(
-      fontSize: 28,
-      color: Colors.black,
-      fontWeight: FontWeight.bold,
-    ),
-    headlineMedium: const TextStyle(
-      fontSize: 24,
-      color: Colors.black,
-      fontWeight: FontWeight.w600,
-    ),
-    headlineSmall: const TextStyle(
-      fontSize: 20,
-      color: Colors.black,
-      fontWeight: FontWeight.w500,
-    ),
-    titleLarge: const TextStyle(
-      fontSize: 20,
-      color: Colors.black,
-      fontWeight: FontWeight.bold, // Often used for AppBars
-    ),
-    titleMedium: const TextStyle(
-      fontSize: 16,
-      color: Colors.black,
-      fontWeight: FontWeight.bold,
-    ),
-    titleSmall: const TextStyle(
-      fontSize: 14,
-      color: Colors.black,
-      fontWeight: FontWeight.bold,
-    ),
-    bodyLarge: const TextStyle(
-      fontSize: 16,
-      color: Colors.black,
-      fontWeight: FontWeight.normal,
-    ),
-    bodyMedium: const TextStyle(
-      fontSize: 14,
-      color: Colors.black,
-      fontWeight: FontWeight.normal,
-    ),
-    bodySmall: const TextStyle(
-      fontSize: 12,
-      color: Colors.black,
-      fontWeight: FontWeight.w300,
-    ),
-    labelLarge: const TextStyle(
-      fontSize: 14,
-      color: Colors.black,
-      fontWeight: FontWeight.bold, // Often used for Buttons
-    ),
-    labelMedium: const TextStyle(
-      fontSize: 12,
-      color: Colors.black,
-      fontWeight: FontWeight.bold,
-    ),
-    labelSmall: const TextStyle(
-      fontSize: 10,
-      color: Colors.black,
-      fontWeight: FontWeight.bold,
-    ),
-  );
+  static const _font = 'Poppins';
 
-  static TextTheme darkTextTheme = TextTheme(
-    headlineLarge: const TextStyle(
+  static const TextTheme textTheme = TextTheme(
+    displayLarge: TextStyle(
+      fontFamily: _font,
+      fontSize: 48,
+      fontWeight: FontWeight.w900,
+      letterSpacing: -1.0,
+      height: 1.1,
+    ),
+    displayMedium: TextStyle(
+      fontFamily: _font,
+      fontSize: 36,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -0.5,
+      height: 1.15,
+    ),
+    displaySmall: TextStyle(
+      fontFamily: _font,
+      fontSize: 32,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.25,
+    ),
+
+    headlineLarge: TextStyle(
+      fontFamily: _font,
       fontSize: 28,
-      color: Colors.white,
+      fontWeight: FontWeight.bold,
+      height: 1.25,
+    ),
+    headlineMedium: TextStyle(
+      fontFamily: _font,
+      fontSize: 24,
+      fontWeight: FontWeight.w600,
+      height: 1.3,
+    ),
+    headlineSmall: TextStyle(
+      fontFamily: _font,
+      fontSize: 20,
+      fontWeight: FontWeight.w500,
+      height: 1.3,
+    ),
+
+    titleLarge: TextStyle(
+      fontFamily: _font,
+      fontSize: 20,
       fontWeight: FontWeight.bold,
     ),
-    headlineMedium: const TextStyle(
-      fontSize: 24,
-      color: Colors.white,
+    titleMedium: TextStyle(
+      fontFamily: _font,
+      fontSize: 16,
       fontWeight: FontWeight.w600,
     ),
-    headlineSmall: const TextStyle(
-      fontSize: 20,
-      color: Colors.white,
-      fontWeight: FontWeight.w500,
+    titleSmall: TextStyle(
+      fontFamily: _font,
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
     ),
-    titleLarge: const TextStyle(
-      fontSize: 20,
-      color: Colors.white,
-      fontWeight: FontWeight.bold, // Often used for AppBars
-    ),
-    titleMedium: const TextStyle(
+
+    bodyLarge: TextStyle(
+      fontFamily: _font,
       fontSize: 16,
-      color: Colors.white,
-      fontWeight: FontWeight.bold,
-    ),
-    titleSmall: const TextStyle(
-      fontSize: 14,
-      color: Colors.white,
-      fontWeight: FontWeight.bold,
-    ),
-    bodyLarge: const TextStyle(
-      fontSize: 16,
-      color: Colors.white,
       fontWeight: FontWeight.normal,
+      height: 1.5,
     ),
-    bodyMedium: const TextStyle(
+    bodyMedium: TextStyle(
+      fontFamily: _font,
       fontSize: 14,
-      color: Colors.white,
       fontWeight: FontWeight.normal,
+      height: 1.5,
     ),
-    bodySmall: const TextStyle(
+    bodySmall: TextStyle(
+      fontFamily: _font,
       fontSize: 12,
-      color: Colors.white,
-      fontWeight: FontWeight.w300,
+      fontWeight: FontWeight.w400,
+      height: 1.45,
     ),
-    labelLarge: const TextStyle(
+
+    labelLarge: TextStyle(
+      fontFamily: _font,
       fontSize: 14,
-      color: Colors.white,
-      fontWeight: FontWeight.bold, // Often used for Buttons
-    ),
-    labelMedium: const TextStyle(
-      fontSize: 12,
-      color: Colors.white,
       fontWeight: FontWeight.bold,
+      letterSpacing: 0.2,
     ),
-    labelSmall: const TextStyle(
+    labelMedium: TextStyle(
+      fontFamily: _font,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.3,
+    ),
+    labelSmall: TextStyle(
+      fontFamily: _font,
       fontSize: 10,
-      color: Colors.white,
       fontWeight: FontWeight.bold,
+      letterSpacing: 0.8,
     ),
   );
 }

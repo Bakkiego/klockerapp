@@ -1,14 +1,25 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart'; // 🚀 Added for PDFs/Docs
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
 import 'package:intl/intl.dart';
 
 import 'help-screens/change_password_screen.dart';
 
+/// Reference conversion — no colour literals remain in this file.
+///
+/// Patterns used here apply to every other screen:
+///   * Card( ... ) with no shape — the card theme supplies border + radius
+///   * ElevatedButton with no style — the button theme supplies it
+///   * green as a FILL      -> scheme.primary
+///   * green as TEXT/ICON   -> context.brandText
+///   * Colors.grey (labels) -> scheme.onSurfaceVariant
+///   * success / info state -> context.status.*
+///   * showDatePicker builder override -> deleted, datePickerTheme handles it
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
 
@@ -19,23 +30,19 @@ class ProfileSettingsScreen extends StatefulWidget {
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // --- Personal Info ---
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _dobController = TextEditingController();
   String? _selectedGender;
 
-  // --- Emergency Contact ---
   final _emergencyNameController = TextEditingController();
   final _emergencyPhoneController = TextEditingController();
 
-  // --- Professional Background ---
   final _educationController = TextEditingController();
   final _skillsController = TextEditingController();
   final _expertiseController = TextEditingController();
 
-  // --- Files & Images ---
   String? _avatarUrl;
   File? _localImageFile;
 
@@ -105,6 +112,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Profile load error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -117,7 +125,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
-  // 🚀 Document Picker Logic
   Future<void> _pickDocument(bool isCv) async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -138,19 +145,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Future<void> _pickDateOfBirth() async {
-    DateTime? pickedDate = await showDatePicker(
+    // The builder override is gone. It forced ColorScheme.light, which
+    // rendered the calendar black-on-black in dark mode. datePickerTheme
+    // now handles both.
+    final pickedDate = await showDatePicker(
       context: context,
       initialDate: DateTime(2000),
       firstDate: DateTime(1940),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF00A36C)),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (pickedDate != null) {
@@ -167,13 +169,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     try {
       final client = Supabase.instance.client;
       final user = client.auth.currentUser;
-      if (user == null) throw Exception("Not logged in");
+      if (user == null) throw Exception('Not logged in');
 
       String? updatedAvatarUrl = _avatarUrl;
       String? updatedCvUrl = _cvUrl;
       String? updatedCertificateUrl = _certificateUrl;
 
-      // 1. Upload Avatar
       if (_localImageFile != null) {
         final ext = _localImageFile!.path.split('.').last;
         final name =
@@ -186,11 +187,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               fileOptions: const FileOptions(upsert: true),
             );
         updatedAvatarUrl = client.storage.from('avatars').getPublicUrl(name);
-        if (mounted)
+        if (mounted) {
           context.read<UserProvider>().setAvatarUrl(updatedAvatarUrl);
+        }
       }
 
-      // 2. Upload CV to new Bucket
       if (_localCvFile != null) {
         final ext = _localCvFile!.path.split('.').last;
         final name =
@@ -207,7 +208,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             .getPublicUrl(name);
       }
 
-      // 3. Upload Certificate to new Bucket
       if (_localCertificateFile != null) {
         final ext = _localCertificateFile!.path.split('.').last;
         final name =
@@ -224,7 +224,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             .getPublicUrl(name);
       }
 
-      // 4. Update Database
       await client
           .from('profiles')
           .update({
@@ -246,17 +245,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
       if (mounted) {
         context.read<UserProvider>().setFullName(_nameController.text.trim());
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile saved successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        // The snackbar theme supplies the colours now.
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Profile saved')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Could not save: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     } finally {
@@ -266,449 +266,388 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading)
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-        ),
-      );
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    if (_isLoading) {
+      // No colour argument — progressIndicatorTheme supplies it.
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "My Profile",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('My Profile')),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // --- AVATAR SECTION ---
-              Center(
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      onTap: _pickAvatar,
-                      child: Container(
-                        height: 120,
-                        width: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: const Color(0xFF00A36C).withOpacity(0.5),
-                            width: 3,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // --- AVATAR ---
+                  Center(
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: _pickAvatar,
+                          child: Container(
+                            height: 120,
+                            width: 120,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainer,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: scheme.primary.withOpacity(0.5),
+                                width: 3,
+                              ),
+                              image: _localImageFile != null
+                                  ? DecorationImage(
+                                      image: FileImage(_localImageFile!),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : (_avatarUrl != null
+                                        ? DecorationImage(
+                                            image: NetworkImage(_avatarUrl!),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : null),
+                            ),
+                            child: _localImageFile == null && _avatarUrl == null
+                                ? Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: scheme.onSurfaceVariant,
+                                  )
+                                : null,
                           ),
-                          image: _localImageFile != null
-                              ? DecorationImage(
-                                  image: FileImage(_localImageFile!),
-                                  fit: BoxFit.cover,
-                                )
-                              : (_avatarUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(_avatarUrl!),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null),
                         ),
-                        child: _localImageFile == null && _avatarUrl == null
-                            ? const Icon(
-                                Icons.person,
-                                size: 60,
-                                color: Colors.grey,
-                              )
-                            : null,
-                      ),
+                        const SizedBox(height: 8),
+                        // textButtonTheme already supplies brandText as the
+                        // foreground, so no style needed.
+                        TextButton.icon(
+                          onPressed: _pickAvatar,
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Update Photo'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _pickAvatar,
-                      icon: const Icon(
-                        Icons.camera_alt,
-                        color: Color(0xFF00A36C),
-                      ),
-                      label: const Text(
-                        "Update Photo",
-                        style: TextStyle(color: Color(0xFF00A36C)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+                  ),
+                  const SizedBox(height: 16),
 
-              // --- 1. PERSONAL INFORMATION CARD ---
-              _buildSectionHeader(Icons.person_outline, "Personal Information"),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Full Name',
-                          prefixIcon: Icon(Icons.badge_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (v) => v!.isEmpty ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone Number',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _addressController,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Home Address',
-                          prefixIcon: Icon(Icons.home_outlined),
-                          alignLabelWithHint: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
+                  // --- PERSONAL ---
+                  _sectionHeader(Icons.person_outline, 'Personal Information'),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _dobController,
-                              readOnly: true,
-                              onTap: _pickDateOfBirth,
-                              decoration: const InputDecoration(
-                                labelText: 'Date of Birth',
-                                prefixIcon: Icon(Icons.cake_outlined),
-                                border: OutlineInputBorder(),
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Full Name',
+                              prefixIcon: Icon(Icons.badge_outlined),
+                            ),
+                            validator: (v) =>
+                                (v == null || v.isEmpty) ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone Number',
+                              prefixIcon: Icon(Icons.phone_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _addressController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Home Address',
+                              prefixIcon: Icon(Icons.home_outlined),
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _dobController,
+                                  readOnly: true,
+                                  onTap: _pickDateOfBirth,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Date of Birth',
+                                    prefixIcon: Icon(Icons.cake_outlined),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _selectedGender,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Gender',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'Male',
+                                      child: Text('Male'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Female',
+                                      child: Text('Female'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Other',
+                                      child: Text('Other'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Prefer not to say',
+                                      child: Text('Unspecified'),
+                                    ),
+                                  ],
+                                  onChanged: (val) =>
+                                      setState(() => _selectedGender = val),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // --- EMERGENCY ---
+                  _sectionHeader(
+                    Icons.local_hospital_outlined,
+                    'Emergency Contact',
+                  ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _emergencyNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Contact Name',
+                              prefixIcon: Icon(
+                                Icons.health_and_safety_outlined,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedGender,
-                              decoration: const InputDecoration(
-                                labelText: 'Gender',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: "Male",
-                                  child: Text("Male"),
-                                ),
-                                DropdownMenuItem(
-                                  value: "Female",
-                                  child: Text("Female"),
-                                ),
-                                DropdownMenuItem(
-                                  value: "Other",
-                                  child: Text("Other"),
-                                ),
-                                DropdownMenuItem(
-                                  value: "Prefer not to say",
-                                  child: Text("Unspecified"),
-                                ),
-                              ],
-                              onChanged: (val) =>
-                                  setState(() => _selectedGender = val),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _emergencyPhoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Contact Phone',
+                              prefixIcon: Icon(Icons.phone_in_talk_outlined),
                             ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              // --- 2. EMERGENCY CONTACT CARD ---
-              _buildSectionHeader(
-                Icons.local_hospital_outlined,
-                "Emergency Contact",
-              ),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _emergencyNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Contact Name',
-                          prefixIcon: Icon(Icons.health_and_safety_outlined),
-                          border: OutlineInputBorder(),
-                        ),
+                  // --- PROFESSIONAL ---
+                  _sectionHeader(Icons.work_outline, 'Professional Background'),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _educationController,
+                            decoration: const InputDecoration(
+                              labelText: 'Education',
+                              prefixIcon: Icon(Icons.school_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _skillsController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Core Skills',
+                              prefixIcon: Icon(Icons.star_border_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _expertiseController,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Expertise & Prior Experience',
+                              prefixIcon: Icon(Icons.work_history_outlined),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _emergencyPhoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Contact Phone',
-                          prefixIcon: Icon(Icons.phone_in_talk_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              // --- 3. PROFESSIONAL BACKGROUND CARD ---
-              _buildSectionHeader(
-                Icons.work_outline,
-                "Professional Background",
-              ),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _educationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Education',
-                          prefixIcon: Icon(Icons.school_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _skillsController,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Core Skills',
-                          prefixIcon: Icon(Icons.star_border_rounded),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _expertiseController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Expertise & Prior Experience',
-                          prefixIcon: Icon(Icons.work_history_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
+                  // --- DOCUMENTS ---
+                  _sectionHeader(
+                    Icons.folder_shared_outlined,
+                    'Digital Documents',
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          _fileUploader(
+                            title: 'Resume / CV',
+                            hasExistingFile: _cvUrl != null,
+                            pendingFileName: _cvFileName,
+                            onTap: () => _pickDocument(true),
+                          ),
+                          const Divider(height: 32),
+                          _fileUploader(
+                            title: 'Educational Certificate',
+                            hasExistingFile: _certificateUrl != null,
+                            pendingFileName: _certificateFileName,
+                            onTap: () => _pickDocument(false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
 
-              // 🚀 --- 4. DIGITAL DOCUMENTS VAULT ---
-              _buildSectionHeader(
-                Icons.folder_shared_outlined,
-                "Digital Documents",
-              ),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      _buildFileUploader(
-                        title: "Resume / CV",
-                        hasExistingFile: _cvUrl != null,
-                        pendingFileName: _cvFileName,
-                        onTap: () => _pickDocument(true),
-                      ),
-                      const Divider(height: 32),
-                      _buildFileUploader(
-                        title: "Educational Certificate",
-                        hasExistingFile: _certificateUrl != null,
-                        pendingFileName: _certificateFileName,
-                        onTap: () => _pickDocument(false),
-                      ),
-                    ],
+                  // The elevatedButtonTheme supplies colour, padding, radius
+                  // and text style, so the local style block is gone.
+                  ElevatedButton.icon(
+                    onPressed: _isSaving ? null : _saveAll,
+                    icon: _isSaving
+                        ? const SizedBox.shrink()
+                        : const Icon(Icons.save),
+                    label: _isSaving
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: scheme.onPrimary,
+                            ),
+                          )
+                        : const Text('Save Profile'),
                   ),
-                ),
-              ),
-              const SizedBox(height: 40),
 
-              // --- SAVE BUTTON ---
-              ElevatedButton.icon(
-                onPressed: _isSaving ? null : _saveAll,
-                icon: const Icon(Icons.save),
-                label: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        "Save Profile",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: const Color(0xFF00A36C),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                  const SizedBox(height: 32),
+                  _accountSection(context),
+                  const SizedBox(height: 24),
+                ],
               ),
-              const SizedBox(height: 32),
-              _buildAccountSection(context), // 🚀 add this
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSectionHeader(IconData icon, String title) {
+  Widget _sectionHeader(IconData icon, String title) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
       child: Row(
         children: [
-          Icon(icon, color: Colors.grey, size: 20),
+          Icon(icon, color: scheme.onSurfaceVariant, size: 20),
           const SizedBox(width: 8),
           Text(
             title.toUpperCase(),
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-              letterSpacing: 1.2,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),
     );
   }
 
-  // 🚀 Reusable UI for the Document Upload Buttons
-  Widget _buildFileUploader({
+  Widget _fileUploader({
     required String title,
     required bool hasExistingFile,
     required String? pendingFileName,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final hasFile = hasExistingFile || pendingFileName != null;
+
+    // "Ready to save" and "Document attached" are states, so they use the
+    // status tokens rather than Colors.blue / Colors.green.
+    final (subColour, subText) = pendingFileName != null
+        ? (context.status.overtimeFg, 'Ready to save: $pendingFileName')
+        : hasExistingFile
+        ? (context.status.approvedFg, 'Document attached')
+        : (scheme.onSurfaceVariant, 'No file attached');
+
     return Row(
       children: [
         Icon(
-          hasExistingFile || pendingFileName != null
-              ? Icons.check_circle
-              : Icons.upload_file,
-          color: hasExistingFile || pendingFileName != null
-              ? Colors.green
-              : Colors.grey,
+          hasFile ? Icons.check_circle : Icons.upload_file,
+          color: hasFile ? context.status.approvedFg : scheme.onSurfaceVariant,
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              if (pendingFileName != null)
-                Text(
-                  "Ready to save: $pendingFileName",
-                  style: const TextStyle(fontSize: 12, color: Colors.blue),
-                )
-              else if (hasExistingFile)
-                const Text(
-                  "Document attached",
-                  style: TextStyle(fontSize: 12, color: Colors.green),
-                )
-              else
-                const Text(
-                  "No files attached",
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+              Text(title, style: theme.textTheme.titleSmall),
+              Text(
+                subText,
+                style: theme.textTheme.bodySmall?.copyWith(color: subColour),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
-        OutlinedButton(
-          onPressed: onTap,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF00A36C),
-            side: const BorderSide(color: Color(0xFF00A36C)),
-          ),
-          child: const Text("Upload"),
-        ),
+        OutlinedButton(onPressed: onTap, child: const Text('Upload')),
       ],
     );
   }
 
-  Widget _buildAccountSection(BuildContext context) {
+  Widget _accountSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          "ACCOUNT",
-          style: TextStyle(
-            color: Colors.grey,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
+        Text(
+          'ACCOUNT',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: scheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.withOpacity(0.2)),
-          ),
+        Card(
           child: ListTile(
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF00A36C).withOpacity(0.1),
+                color: scheme.primaryContainer,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.lock_outline,
-                color: Color(0xFF00A36C),
+                color: scheme.onPrimaryContainer,
                 size: 20,
               ),
             ),
-            title: const Text("Change password"),
-            subtitle: const Text(
-              "Update the password you sign in with",
-              style: TextStyle(fontSize: 12),
-            ),
-            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+            title: const Text('Change password'),
+            subtitle: const Text('Update the password you sign in with'),
+            trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),

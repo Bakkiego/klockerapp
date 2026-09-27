@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 
@@ -429,7 +430,7 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        _buildStatusBadge(status),
+                                        KStatusBadge(status: status),
                                         const SizedBox(width: 8),
                                         if (desc.isNotEmpty)
                                           Expanded(
@@ -547,57 +548,6 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
             style: TextStyle(color: Colors.grey),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color bgColor;
-    Color textColor;
-
-    switch (status) {
-      case 'New':
-        bgColor = Colors.green.withOpacity(0.1);
-        textColor = Colors.green;
-        break;
-      case 'Fairly New':
-        bgColor = Colors.teal.withOpacity(0.1);
-        textColor = Colors.teal;
-        break;
-      case 'Used':
-        bgColor = Colors.blue.withOpacity(0.1);
-        textColor = Colors.blueAccent;
-        break;
-      case 'Fairly Used':
-        bgColor = Colors.orange.withOpacity(0.1);
-        textColor = Colors.orange;
-        break;
-      case 'Old':
-        bgColor = Colors.deepOrange.withOpacity(0.1);
-        textColor = Colors.deepOrange;
-        break;
-      case 'Broken':
-        bgColor = Colors.red.withOpacity(0.1);
-        textColor = Colors.red;
-        break;
-      default:
-        bgColor = Colors.grey.withOpacity(0.1);
-        textColor = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: TextStyle(
-          color: textColor,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

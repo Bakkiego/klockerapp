@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 
+import '../utils/widgets/k_status_badge.dart';
+
 class EmployeeAttendanceScreen extends StatefulWidget {
   const EmployeeAttendanceScreen({super.key});
 
@@ -118,7 +120,14 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              _buildStatusBadge(isOngoing, status),
+                              KStatusBadge(
+                                status: isOngoing ? 'in_progress' : status,
+                                label: isOngoing
+                                    ? 'ACTIVE SHIFT'
+                                    : (status == 'early_leave_pending_approval'
+                                          ? 'EARLY LEAVE'
+                                          : 'COMPLETED'),
+                              ),
                             ],
                           ),
                           const Divider(height: 24),
@@ -226,37 +235,6 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
   }
 
   // Helper widget for the Status Pill (Catches your "Early Leave" SQL logic!)
-  Widget _buildStatusBadge(bool isOngoing, String status) {
-    Color bgColor = Colors.green.withOpacity(0.1);
-    Color textColor = Colors.green;
-    String label = "Completed";
-
-    if (isOngoing) {
-      bgColor = Colors.blue.withOpacity(0.1);
-      textColor = Colors.blue;
-      label = "Active Shift";
-    } else if (status == 'early_leave_pending_approval') {
-      bgColor = Colors.orange.withOpacity(0.1);
-      textColor = Colors.orange;
-      label = "Early Leave";
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
 
   Widget _buildEmptyState() {
     return Center(
