@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
 import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
@@ -80,22 +81,23 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
   }
 
   Future<void> _deleteAsset(String assetId) async {
+    final scheme = Theme.of(context).colorScheme;
     setState(() => _isLoading = true);
     try {
       await SupabaseService().deleteAsset(assetId);
       await _fetchAssets();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text("Asset Deleted"),
-            backgroundColor: Colors.red,
+            backgroundColor: scheme.error,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+          SnackBar(content: Text("Error: $e"), backgroundColor: scheme.error),
         );
       }
     } finally {
@@ -120,10 +122,9 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            final scheme = theme.colorScheme;
             return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
               backgroundColor: Theme.of(context).scaffoldBackgroundColor,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 500),
@@ -217,14 +218,6 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                             Expanded(
                               flex: 1, // Keep cancel button small
                               child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
                                 onPressed: () => Navigator.pop(context),
                                 child: const FittedBox(
                                   fit: BoxFit.scaleDown,
@@ -236,23 +229,13 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                             Expanded(
                               flex: 2, // Give the main action more room
                               child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  backgroundColor: const Color(0xFF00A36C),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
                                 onPressed: () async {
                                   final name = nameController.text.trim();
                                   if (name.isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text("Asset name is required"),
-                                        backgroundColor: Colors.red,
+                                        backgroundColor: scheme.error,
                                       ),
                                     );
                                     return;
@@ -287,9 +270,6 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                               ? "Asset added"
                                               : "Asset updated",
                                         ),
-                                        backgroundColor: const Color(
-                                          0xFF00A36C,
-                                        ),
                                       ),
                                     );
                                   } catch (e) {
@@ -297,7 +277,7 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                     messenger.showSnackBar(
                                       SnackBar(
                                         content: Text("Error: $e"),
-                                        backgroundColor: Colors.red,
+                                        backgroundColor: scheme.error,
                                       ),
                                     );
                                   }
@@ -335,14 +315,12 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
   // ==========================================
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final isWeb = MediaQuery.of(context).size.width > 800;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          "Asset Management",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Asset Management"),
         centerTitle: true,
         actions: [
           IconButton(
@@ -356,18 +334,13 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
+        backgroundColor: scheme.primary,
         onPressed: () => _showAssetDialog(), // Null means ADD
-        backgroundColor: const Color(0xFF00A36C),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          "Add Asset",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        icon: Icon(Icons.add),
+        label: Text("Add Asset"),
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _assets.isEmpty
           ? _buildEmptyState()
           : Center(
@@ -393,10 +366,6 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                        ),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Row(
@@ -405,7 +374,7 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey.withOpacity(0.1),
+                                  color: scheme.surfaceContainer,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
@@ -438,8 +407,8 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                               desc,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Colors.grey,
+                                              style: TextStyle(
+                                                color: scheme.onSurfaceVariant,
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -449,16 +418,16 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.person_outline,
                                           size: 16,
-                                          color: Colors.grey,
+                                          color: scheme.onSurfaceVariant,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           assignedName,
-                                          style: const TextStyle(
-                                            color: Colors.grey,
+                                          style: TextStyle(
+                                            color: scheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -471,17 +440,17 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                               Column(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.edit,
-                                      color: Colors.blueAccent,
+                                      color: context.status.overtimeFg,
                                     ),
                                     onPressed: () =>
                                         _showAssetDialog(existingAsset: asset),
                                   ),
                                   IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.delete_outline,
-                                      color: Colors.redAccent,
+                                      color: scheme.error,
                                     ),
                                     onPressed: () {
                                       showDialog(
@@ -498,10 +467,6 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
                                               child: const Text("Cancel"),
                                             ),
                                             ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.red,
-                                                foregroundColor: Colors.white,
-                                              ),
                                               onPressed: () {
                                                 Navigator.pop(ctx);
                                                 _deleteAsset(asset['id']);
@@ -528,6 +493,8 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
   }
 
   Widget _buildEmptyState() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -535,7 +502,7 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
           Icon(
             Icons.inventory_2_outlined,
             size: 80,
-            color: Colors.grey.withOpacity(0.5),
+            color: scheme.onSurfaceVariant,
           ),
           const SizedBox(height: 16),
           const Text(
@@ -543,9 +510,11 @@ class _AssetManagementScreenState extends State<AssetManagementScreen> {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             "Add your company laptops, phones, and equipment here.",
-            style: TextStyle(color: Colors.grey),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
