@@ -15,7 +15,7 @@ import 'package:klockerapp/screens/hr-screens/warning_screen.dart';
 import '../models/app_enums.dart';
 import '../supabase/repo/supabase_service.dart';
 import 'company-screens/appraisal_screen.dart';
-import 'company-screens/components/assets_management_screen.dart';
+import 'company-screens/assets_management_screen.dart';
 import 'company-screens/payslip_screen.dart';
 import 'company-screens/performance_screen.dart';
 import 'company-screens/salary_screen.dart';
