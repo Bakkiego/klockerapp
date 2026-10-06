@@ -4,6 +4,7 @@ import 'package:provider/provider.dart'; // 🚀 Added for Permissions
 import 'package:klockerapp/providers/user_provider.dart'; // 🚀 Added for Permissions
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import 'package:klockerapp/screens/employee-screens/components/time_management_components/custom_date_picker.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
 import 'leave_settings_screen.dart'; // 🚀 IMPORT SETTINGS SCREEN
 
 class LeaveScreen extends StatefulWidget {
@@ -25,10 +26,37 @@ class _LeaveScreenState extends State<LeaveScreen> {
   String _selectedFilter = 'Pending';
   final List<String> _filters = ['Pending', 'Approved', 'Rejected', 'All'];
 
+  // The search bar was previously decorative — no controller, no handler.
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
     _fetchRequests();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _showSnack(String message, {bool isError = false}) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: isError
+              ? theme.textTheme.bodyMedium?.copyWith(color: scheme.onError)
+              : null,
+        ),
+        backgroundColor: isError ? scheme.error : null,
+      ),
+    );
   }
 
   Future<void> _fetchRequests() async {
@@ -38,50 +66,42 @@ class _LeaveScreenState extends State<LeaveScreen> {
       final requests = await SupabaseService().getAllCompanyLeaveRequests();
       if (mounted) setState(() => _allRequests = requests);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
+      if (mounted) _showSnack("Error: $e", isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleDecision(String requestId, String decision) async {
-    try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-        ),
-      );
+    // Captured up front: after the dialog is popped, looking these up off
+    // `context` is a race against the widget still being mounted.
+    final navigator = Navigator.of(context);
 
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
       await SupabaseService().updateLeaveStatus(requestId, decision);
 
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Request $decision!"),
-            backgroundColor: decision == 'approved' ? Colors.green : Colors.red,
-          ),
-        );
-      }
+      navigator.pop(); // Close loading dialog
+      if (!mounted) return;
+
+      _showSnack("Request $decision.");
       _fetchRequests(); // Refresh the list
     } catch (e) {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
+      navigator.pop();
+      if (!mounted) return;
+      _showSnack("Error: $e", isError: true);
     }
   }
 
   // --- 🚀 DUAL-FILTERING ENGINE ---
   List<Map<String, dynamic>> get _filteredRequests {
+    final query = _searchQuery.trim().toLowerCase();
+
     return _allRequests.where((req) {
       // 1. Status Check
       bool matchesStatus =
@@ -107,27 +127,37 @@ class _LeaveScreenState extends State<LeaveScreen> {
         DateTime cleanEnd = DateTime(end.year, end.month, end.day);
 
         // Does the target date fall on or between the start and end dates?
-        matchesDate =
-            (target.isAtSameMomentAs(cleanStart) ||
-                target.isAfter(cleanStart)) &&
-            (target.isAtSameMomentAs(cleanEnd) || target.isBefore(cleanEnd));
+        matchesDate = !target.isBefore(cleanStart) && !target.isAfter(cleanEnd);
       }
 
-      return matchesStatus && matchesDate;
+      // 3. Text Check (employee name or leave type)
+      bool matchesQuery = true;
+      if (query.isNotEmpty) {
+        final name = (req['profiles']?['full_name'] ?? '')
+            .toString()
+            .toLowerCase();
+        final type = (req['leave_type'] ?? '').toString().toLowerCase();
+        matchesQuery = name.contains(query) || type.contains(query);
+      }
+
+      return matchesStatus && matchesDate && matchesQuery;
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     // 🚀 CHECK PERMISSION FOR LEAVE POLICIES
     final userProvider = context.watch<UserProvider>();
     final canManagePolicies = userProvider.can('manage_leave_policies');
 
+    // Computed once — the getter walks the whole list, and the old code
+    // called it twice per build.
+    final requests = _filteredRequests;
+
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -153,13 +183,14 @@ class _LeaveScreenState extends State<LeaveScreen> {
                     const SizedBox(width: 8),
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.redAccent.withOpacity(0.1),
+                        color: scheme.errorContainer,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: IconButton(
-                        icon: const Icon(
+                        tooltip: "Clear date filter",
+                        icon: Icon(
                           Icons.close_rounded,
-                          color: Colors.redAccent,
+                          color: scheme.onErrorContainer,
                         ),
                         onPressed: () {
                           setState(() {
@@ -191,27 +222,23 @@ class _LeaveScreenState extends State<LeaveScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00A36C).withOpacity(0.1),
+                          color: scheme.primaryContainer,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFF00A36C).withOpacity(0.3),
-                          ),
                         ),
                         // 🚀 MAGIC FIX: mainAxisSize limits the row to strictly what it needs
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
+                          children: [
                             Icon(
                               Icons.settings,
-                              color: Color(0xFF00A36C),
+                              color: scheme.onPrimaryContainer,
                               size: 20,
                             ),
-                            SizedBox(width: 4),
+                            const SizedBox(width: 4),
                             Text(
                               "Settings",
-                              style: TextStyle(
-                                color: Color(0xFF00A36C),
-                                fontWeight: FontWeight.bold,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: scheme.onPrimaryContainer,
                               ),
                             ),
                           ],
@@ -230,28 +257,33 @@ class _LeaveScreenState extends State<LeaveScreen> {
                 children: [
                   Expanded(
                     child: SearchBar(
-                      elevation: WidgetStateProperty.all(0),
-                      backgroundColor: WidgetStateProperty.all(
-                        isDark ? Colors.grey[900] : Colors.grey[100],
-                      ),
+                      controller: _searchController,
                       hintText: "Search requests...",
-                      leading: const Icon(
-                        Icons.search,
-                        size: 20,
-                        color: Colors.grey,
-                      ),
+                      leading: const Icon(Icons.search, size: 20),
+                      trailing: [
+                        if (_searchQuery.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00A36C).withOpacity(0.1),
+                      color: scheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.filter_list_outlined,
-                      color: Color(0xFF00A36C),
+                      color: scheme.onPrimaryContainer,
                     ),
                   ),
                 ],
@@ -281,22 +313,18 @@ class _LeaveScreenState extends State<LeaveScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF00A36C)
-                            : Colors.transparent,
+                        color: isSelected ? scheme.primary : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFF00A36C)
-                              : Colors.grey.withOpacity(0.3),
+                          color: isSelected ? scheme.primary : scheme.outline,
                         ),
                       ),
                       child: Text(
                         filter,
-                        style: TextStyle(
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: isSelected
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : Colors.black87),
+                              ? scheme.onPrimary
+                              : scheme.onSurfaceVariant,
                           fontWeight: isSelected
                               ? FontWeight.bold
                               : FontWeight.normal,
@@ -311,34 +339,27 @@ class _LeaveScreenState extends State<LeaveScreen> {
             // 4. DYNAMIC REQUESTS LIST
             Expanded(
               child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF00A36C),
-                      ),
-                    )
+                  ? const Center(child: CircularProgressIndicator())
                   : RefreshIndicator(
-                      color: const Color(0xFF00A36C),
                       onRefresh: _fetchRequests,
                       child: ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          if (_filteredRequests.isEmpty)
+                          if (requests.isEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 40),
                               child: Center(
                                 child: Text(
-                                  _isDateFilterActive
-                                      ? "No ${_selectedFilter.toLowerCase()} requests on this date."
-                                      : "No ${_selectedFilter.toLowerCase()} requests.",
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 16,
+                                  _emptyMessage(),
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    color: scheme.onSurfaceVariant,
                                   ),
                                 ),
                               ),
                             ),
 
-                          ..._filteredRequests.map((req) {
+                          ...requests.map((req) {
                             final startDate = DateTime.parse(req['start_date']);
                             final endDate = DateTime.parse(req['end_date']);
 
@@ -366,6 +387,17 @@ class _LeaveScreenState extends State<LeaveScreen> {
     );
   }
 
+  String _emptyMessage() {
+    final status = _selectedFilter.toLowerCase();
+    if (_searchQuery.trim().isNotEmpty) {
+      return "No $status requests match \"${_searchQuery.trim()}\".";
+    }
+    if (_isDateFilterActive) {
+      return "No $status requests on this date.";
+    }
+    return "No $status requests.";
+  }
+
   // --- SMART FOOTER WIDGET ---
   Widget _buildManagerActionCard({
     required String requestId,
@@ -377,161 +409,134 @@ class _LeaveScreenState extends State<LeaveScreen> {
     String? imageUrl, // 🚀 Made this nullable (String?)
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
     final isPending = status.toLowerCase() == 'pending';
-    final isApproved = status.toLowerCase() == 'approved';
 
-    return Container(
+    // One lookup instead of an isApproved ternary on every colour below —
+    // and it covers statuses beyond approved/rejected if any ever appear.
+    final (statusBg, statusFg) = context.status.forStatus(status);
+
+    return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.dividerColor.withOpacity(0.05)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              // 🚀 DYNAMIC AVATAR LOGIC
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: const Color(0xFF00A36C).withOpacity(0.2),
-                backgroundImage: imageUrl != null
-                    ? NetworkImage(imageUrl)
-                    : null,
-                child: imageUrl == null
-                    ? const Icon(Icons.person, color: Color(0xFF00A36C))
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                // 🚀 DYNAMIC AVATAR LOGIC
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: scheme.primaryContainer,
+                  backgroundImage: imageUrl != null
+                      ? NetworkImage(imageUrl)
+                      : null,
+                  child: imageUrl == null
+                      ? Icon(Icons.person, color: scheme.onPrimaryContainer)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: theme.textTheme.titleMedium),
+                      Text(
+                        type,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+                Text(
+                  days,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: context.brandText,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  date,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1),
+            ),
+
+            if (isPending)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => _handleDecision(requestId, 'rejected'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: scheme.error,
+                      ),
+                      child: const Text("Reject"),
                     ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _handleDecision(requestId, 'approved'),
+                      child: const Text("Approve"),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: statusBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      status.toLowerCase() == 'approved'
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                      color: statusFg,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
                     Text(
-                      type,
-                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      _statusLabel(status),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: statusFg,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Text(
-                days,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF00A36C),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-              const SizedBox(width: 5),
-              Text(
-                date,
-                style: const TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(height: 1),
-          ),
-
-          if (isPending)
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => _handleDecision(requestId, 'rejected'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                    ),
-                    child: const Text(
-                      "Reject",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _handleDecision(requestId, 'approved'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00A36C),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text(
-                      "Approve",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: isApproved
-                    ? const Color(0xFF00A36C).withOpacity(0.1)
-                    : Colors.redAccent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    isApproved ? Icons.check_circle : Icons.cancel,
-                    color: isApproved
-                        ? const Color(0xFF00A36C)
-                        : Colors.redAccent,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isApproved ? "Approved" : "Rejected",
-                    style: TextStyle(
-                      color: isApproved
-                          ? const Color(0xFF00A36C)
-                          : Colors.redAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  String _statusLabel(String status) {
+    if (status.isEmpty) return 'Unknown';
+    return status[0].toUpperCase() + status.substring(1).toLowerCase();
   }
 }
