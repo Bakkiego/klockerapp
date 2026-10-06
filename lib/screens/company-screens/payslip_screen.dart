@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import 'package:klockerapp/providers/user_provider.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
 import 'components/payslip_detail_screen.dart';
 
 class PayslipScreen extends StatefulWidget {
@@ -24,6 +25,21 @@ class _PayslipScreenState extends State<PayslipScreen> {
   );
 
   Map<String, Map<String, dynamic>> _payrollSummary = {};
+
+  static const _months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
 
   @override
   void initState() {
@@ -135,38 +151,28 @@ class _PayslipScreenState extends State<PayslipScreen> {
 
       if (mounted) setState(() => _payrollSummary = summary);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text("Error: $e"),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _pickDateRange() async {
-    final theme = Theme.of(context);
-    DateTimeRange? picked = await showDateRangePicker(
+    // The Theme override is gone. It replaced the app bar and colour scheme
+    // with hardcoded values, which is the same pattern that rendered the
+    // calendar unreadable in dark mode. datePickerTheme covers it now.
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
       initialDateRange: _selectedDateRange,
       firstDate: DateTime(2023),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: theme.copyWith(
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Color(0xFF00A36C),
-              foregroundColor: Colors.white,
-            ),
-            colorScheme: theme.colorScheme.copyWith(
-              primary: const Color(0xFF00A36C),
-              onPrimary: Colors.white,
-              surface: theme.scaffoldBackgroundColor,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (picked != null) {
@@ -181,25 +187,15 @@ class _PayslipScreenState extends State<PayslipScreen> {
     return "${hours}h ${minutes}m";
   }
 
+  String _periodLabel() {
+    final d = _selectedDateRange.start;
+    return "${_months[d.month - 1]} ${d.year}";
+  }
+
   void _showBulkStatusUpdateDialog() {
-    final TextEditingController bulkMonthController = TextEditingController();
-    final targetDate = _selectedDateRange.start;
-    final months = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-    bulkMonthController.text =
-        "${months[targetDate.month - 1]} ${targetDate.year}";
+    final TextEditingController bulkMonthController = TextEditingController(
+      text: _periodLabel(),
+    );
 
     String selectedStatus = 'Paid';
     bool isUpdating = false;
@@ -209,42 +205,39 @@ class _PayslipScreenState extends State<PayslipScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            final scheme = theme.colorScheme;
+
             return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                "Bulk Status Update",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: const Text("Bulk Status Update"),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    "This will instantly update the status of EVERY payslip generated for this period.",
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  Text(
+                    "This will update the status of every payslip generated "
+                    "for this period.",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: bulkMonthController,
                     decoration: const InputDecoration(
                       labelText: "Payroll Period (e.g. March 2026)",
-                      border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedStatus,
-                    decoration: const InputDecoration(
-                      labelText: "New Status",
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(labelText: "New Status"),
                     items: ['Pending', 'Paid', 'Cancelled']
                         .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                         .toList(),
                     onChanged: (val) {
-                      if (val != null)
+                      if (val != null) {
                         setDialogState(() => selectedStatus = val);
+                      }
                     },
                   ),
                 ],
@@ -252,10 +245,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
               actions: [
                 TextButton(
                   onPressed: isUpdating ? null : () => Navigator.pop(ctx),
-                  child: const Text(
-                    "Cancel",
-                    style: TextStyle(color: Colors.grey),
-                  ),
+                  child: const Text("Cancel"),
                 ),
                 ElevatedButton(
                   onPressed: isUpdating
@@ -263,46 +253,41 @@ class _PayslipScreenState extends State<PayslipScreen> {
                       : () async {
                           if (bulkMonthController.text.trim().isEmpty) return;
                           setDialogState(() => isUpdating = true);
+
+                          final navigator = Navigator.of(ctx);
+                          final messenger = ScaffoldMessenger.of(context);
+                          final period = bulkMonthController.text.trim();
+
                           try {
                             await SupabaseService().bulkUpdatePayslipStatus(
-                              bulkMonthController.text.trim(),
+                              period,
                               selectedStatus,
                             );
-                            if (mounted) {
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    "Success! All ${bulkMonthController.text} payslips marked as $selectedStatus.",
-                                  ),
-                                  backgroundColor: Colors.green,
+                            navigator.pop();
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  "All $period payslips marked $selectedStatus",
                                 ),
-                              );
-                            }
+                              ),
+                            );
                           } catch (e) {
-                            if (mounted)
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(e.toString()),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                          } finally {
-                            if (mounted)
-                              setDialogState(() => isUpdating = false);
+                            setDialogState(() => isUpdating = false);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(e.toString()),
+                                backgroundColor: scheme.error,
+                              ),
+                            );
                           }
                         },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00A36C),
-                    foregroundColor: Colors.white,
-                  ),
                   child: isUpdating
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                            color: Colors.white,
                             strokeWidth: 2,
+                            color: scheme.onPrimary,
                           ),
                         )
                       : const Text("Update All"),
@@ -312,54 +297,37 @@ class _PayslipScreenState extends State<PayslipScreen> {
           },
         );
       },
-    );
+    ).then((_) => bulkMonthController.dispose());
   }
 
   void _showRunPayrollDialog() {
-    final targetDate = _selectedDateRange.start;
-    final months = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-    _monthController.text =
-        "${months[targetDate.month - 1]} ${targetDate.year}";
+    _monthController.text = _periodLabel();
 
     showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            final scheme = theme.colorScheme;
+
             return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                "Run Monthly Payroll",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: const Text("Run Monthly Payroll"),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    "This will calculate salaries and instantly send payslips to all active employees' apps.",
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  Text(
+                    "This will calculate salaries and send payslips to every "
+                    "active employee's app.",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _monthController,
                     decoration: const InputDecoration(
                       labelText: "Payroll Period",
-                      border: OutlineInputBorder(),
                     ),
                   ),
                 ],
@@ -369,10 +337,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
                   onPressed: _isRunningPayroll
                       ? null
                       : () => Navigator.pop(ctx),
-                  child: const Text(
-                    "Cancel",
-                    style: TextStyle(color: Colors.grey),
-                  ),
+                  child: const Text("Cancel"),
                 ),
                 ElevatedButton(
                   onPressed: _isRunningPayroll
@@ -380,45 +345,36 @@ class _PayslipScreenState extends State<PayslipScreen> {
                       : () async {
                           if (_monthController.text.trim().isEmpty) return;
                           setDialogState(() => _isRunningPayroll = true);
+
+                          final navigator = Navigator.of(ctx);
+                          final messenger = ScaffoldMessenger.of(context);
+                          final period = _monthController.text.trim();
+
                           try {
-                            await SupabaseService().runMonthlyPayroll(
-                              _monthController.text.trim(),
+                            await SupabaseService().runMonthlyPayroll(period);
+                            navigator.pop();
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text("Payslips for $period generated"),
+                              ),
                             );
-                            if (mounted) {
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    "Success! Payslips for ${_monthController.text} generated.",
-                                  ),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            }
                           } catch (e) {
-                            if (mounted)
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(e.toString()),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                          } finally {
-                            if (mounted)
-                              setDialogState(() => _isRunningPayroll = false);
+                            setDialogState(() => _isRunningPayroll = false);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(e.toString()),
+                                backgroundColor: scheme.error,
+                              ),
+                            );
                           }
                         },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00A36C),
-                    foregroundColor: Colors.white,
-                  ),
                   child: _isRunningPayroll
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                            color: Colors.white,
                             strokeWidth: 2,
+                            color: scheme.onPrimary,
                           ),
                         )
                       : const Text("Generate Payslips"),
@@ -434,9 +390,8 @@ class _PayslipScreenState extends State<PayslipScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
-    // 🚀 EXACT MATCH for your database key!
     final userProvider = context.watch<UserProvider>();
     final canRunPayroll = userProvider.can('run_payroll');
     final currency = userProvider.currencySymbol;
@@ -445,19 +400,14 @@ class _PayslipScreenState extends State<PayslipScreen> {
     summaryList.sort((a, b) => a['name'].compareTo(b['name']));
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
-          "Payroll Report",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Payroll Report"),
         centerTitle: true,
         actions: [
-          // 🚀 GRANULAR SECURITY: Hide Bulk Update
           if (canRunPayroll)
             IconButton(
               tooltip: "Bulk Update Status",
-              icon: const Icon(Icons.checklist_rtl, color: Color(0xFF00A36C)),
+              icon: const Icon(Icons.checklist_rtl),
               onPressed: _showBulkStatusUpdateDialog,
             ),
         ],
@@ -467,25 +417,20 @@ class _PayslipScreenState extends State<PayslipScreen> {
           // --- 1. DATE FILTER BAR ---
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: isDark ? theme.colorScheme.surface : Colors.grey.shade100,
+            color: scheme.surfaceContainer,
             child: Row(
               children: [
-                const Icon(Icons.date_range, color: Color(0xFF00A36C)),
+                Icon(Icons.date_range, color: scheme.primary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    "${DateFormat('MMM dd').format(_selectedDateRange.start)} - ${DateFormat('MMM dd, yyyy').format(_selectedDateRange.end)}",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                    "${DateFormat('MMM dd').format(_selectedDateRange.start)} - "
+                    "${DateFormat('MMM dd, yyyy').format(_selectedDateRange.end)}",
+                    style: theme.textTheme.titleMedium,
                   ),
                 ),
                 TextButton(
                   onPressed: _pickDateRange,
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF00A36C),
-                  ),
                   child: const Text("CHANGE"),
                 ),
               ],
@@ -495,14 +440,14 @@ class _PayslipScreenState extends State<PayslipScreen> {
           // --- 2. SUMMARY LIST ---
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-                  )
+                ? const Center(child: CircularProgressIndicator())
                 : summaryList.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       "No payroll data found for this period.",
-                      style: TextStyle(color: Colors.grey),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   )
                 : ListView.builder(
@@ -512,54 +457,43 @@ class _PayslipScreenState extends State<PayslipScreen> {
                       final emp = summaryList[index];
                       final isHourly = emp['is_hourly'] == true;
 
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PayslipDetailScreen(
-                                employeeSummary: {
-                                  'real_profile_id': emp['profile_id'],
-                                  'name': emp['name'],
-                                  'net_salary': 0.00,
-                                },
-                                dateRange: _selectedDateRange,
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PayslipDetailScreen(
+                                  employeeSummary: {
+                                    'real_profile_id': emp['profile_id'],
+                                    'name': emp['name'],
+                                    'net_salary': 0.00,
+                                  },
+                                  dateRange: _selectedDateRange,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                        child: Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: Colors.grey.withOpacity(0.2),
-                            ),
-                          ),
-                          color: isDark
-                              ? theme.colorScheme.surface
-                              : Colors.white,
+                            );
+                          },
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Row(
                               children: [
                                 CircleAvatar(
                                   radius: 24,
-                                  backgroundColor: const Color(
-                                    0xFF00A36C,
-                                  ).withOpacity(0.2),
+                                  backgroundColor: scheme.primaryContainer,
                                   backgroundImage: emp['avatar_url'] != null
                                       ? NetworkImage(emp['avatar_url'])
                                       : null,
                                   child: emp['avatar_url'] == null
                                       ? Text(
                                           emp['name'][0].toUpperCase(),
-                                          style: const TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF00A36C),
-                                          ),
+                                          style: theme.textTheme.titleLarge
+                                              ?.copyWith(
+                                                color:
+                                                    scheme.onPrimaryContainer,
+                                              ),
                                         )
                                       : null,
                                 ),
@@ -571,28 +505,25 @@ class _PayslipScreenState extends State<PayslipScreen> {
                                     children: [
                                       Text(
                                         emp['name'],
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
+                                        style: theme.textTheme.titleMedium,
                                       ),
                                       const SizedBox(height: 4),
-
                                       isHourly
                                           ? Text(
-                                              "${emp['shifts_count']} Completed Shifts",
-                                              style: const TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 13,
-                                              ),
+                                              "${emp['shifts_count']} completed shifts",
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        scheme.onSurfaceVariant,
+                                                  ),
                                             )
-                                          : const Text(
-                                              "Monthly Salaried",
-                                              style: TextStyle(
-                                                color: Color(0xFF00A36C),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                          : Text(
+                                              "Monthly salaried",
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: context.brandText,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                             ),
                                     ],
                                   ),
@@ -603,9 +534,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF00A36C,
-                                    ).withOpacity(0.1),
+                                    color: scheme.primaryContainer,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Column(
@@ -614,11 +543,10 @@ class _PayslipScreenState extends State<PayslipScreen> {
                                         isHourly
                                             ? "Tracked Time"
                                             : "Base Salary",
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Color(0xFF00A36C),
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: scheme.onPrimaryContainer,
+                                            ),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
@@ -627,11 +555,10 @@ class _PayslipScreenState extends State<PayslipScreen> {
                                                 emp['total_minutes'],
                                               )
                                             : "$currency${emp['base_rate'].toStringAsFixed(0)}",
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: Color(0xFF00A36C),
-                                        ),
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: scheme.onPrimaryContainer,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -647,18 +574,12 @@ class _PayslipScreenState extends State<PayslipScreen> {
         ],
       ),
 
-      // 🚀 GRANULAR SECURITY: Hide the critical "Run Payroll" button
       floatingActionButton: canRunPayroll
           ? FloatingActionButton.extended(
               heroTag: null,
               onPressed: _showRunPayrollDialog,
-              backgroundColor: const Color(0xFF00A36C),
-              foregroundColor: Colors.white,
               icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text(
-                "Run Payroll",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              label: const Text("Run Payroll"),
             )
           : null,
     );
