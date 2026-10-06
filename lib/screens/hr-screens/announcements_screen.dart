@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import 'package:klockerapp/screens/employee-screens/components/employee_screen_components/k_text_input_field.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -17,6 +18,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _startDateController = TextEditingController();
   final TextEditingController _endDateController = TextEditingController();
+
+  static final DateFormat _dbDate = DateFormat('yyyy-MM-dd');
 
   bool _isPublishing = false;
 
@@ -57,28 +60,52 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     super.dispose();
   }
 
-  Future<void> _selectDate(TextEditingController controller) async {
+  // ==========================================
+  // Helpers
+  // ==========================================
+
+  void _showSnack(String message, {bool isError = false}) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    // Default snackBarTheme handles the normal case. Only failures override
+    // the colour — and a null style lets the theme's contentTextStyle win.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: isError
+              ? theme.textTheme.bodyMedium?.copyWith(color: scheme.onError)
+              : null,
+        ),
+        backgroundColor: isError ? scheme.error : null,
+      ),
+    );
+  }
+
+  /// Opens the picker seeded with whatever is already in the field, so
+  /// re-picking doesn't jump back to today.
+  Future<void> _selectDate(
+    TextEditingController controller, {
+    DateTime? notBefore,
+  }) async {
+    final lower = notBefore ?? DateTime(2000);
+    final existing = DateTime.tryParse(controller.text);
+
+    var initial = existing ?? DateTime.now();
+    if (initial.isBefore(lower)) initial = lower;
+
     final DateTime? pickedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
+      initialDate: initial,
+      firstDate: lower,
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(
-              context,
-            ).colorScheme.copyWith(primary: const Color(0xFF00A36C)),
-          ),
-          child: child!,
-        );
-      },
+      // No `builder:` override — datePickerTheme in k_theme.dart styles
+      // this in both modes. The old override forced light-mode defaults.
     );
-    if (pickedDate != null) {
-      setState(() {
-        controller.text = DateFormat('yyyy-MM-dd').format(pickedDate);
-      });
-    }
+
+    if (pickedDate == null || !mounted) return;
+    setState(() => controller.text = _dbDate.format(pickedDate));
   }
 
   Future<void> _handlePublish() async {
@@ -91,17 +118,28 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         description.isEmpty ||
         startDate.isEmpty ||
         endDate.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please fill in all fields before publishing."),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnack("Please fill in all fields before publishing.");
+      return;
+    }
+
+    final start = DateTime.tryParse(startDate);
+    final end = DateTime.tryParse(endDate);
+
+    if (start == null || end == null) {
+      _showSnack("Those dates didn't read correctly — please pick them again.");
+      return;
+    }
+
+    if (end.isBefore(start)) {
+      _showSnack("The end date can't be before the start date.");
       return;
     }
 
     setState(() => _isPublishing = true);
+
+    // Captured before the await: after the pop below, `context` no longer
+    // has a messenger or navigator to look up.
+    final navigator = Navigator.of(context);
 
     try {
       await _service.createAnnouncement(
@@ -115,47 +153,28 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Announcement Published!",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Color(0xFF00A36C),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      Navigator.pop(context);
+      _showSnack("Announcement published.");
+      navigator.pop();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Database Error: $e"),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isPublishing = false);
+      if (!mounted) return;
+      _showSnack("Database Error: $e", isError: true);
+      // Only reset here. On success the screen is gone, so calling
+      // setState in a `finally` would touch a disposed State.
+      setState(() => _isPublishing = false);
     }
   }
+
+  // ==========================================
+  // Build
+  // ==========================================
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Post Announcement',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        elevation: 0,
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Post Announcement')),
       // 🚀 Apply Web constraints to center the content
       body: Center(
         child: ConstrainedBox(
@@ -173,97 +192,60 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 // ==========================================
                 // 1. TARGET AUDIENCE
                 // ==========================================
-                Text(
-                  "Target Audience",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                _sectionLabel("Target Audience"),
 
-                _isLoadingBranches
-                    ? const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF00A36C),
+                if (_isLoadingBranches)
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  DropdownButtonFormField<String?>(
+                    value: _selectedBranchId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: "Select Branch",
+                      prefixIcon: Icon(Icons.store_mall_directory_outlined),
+                    ),
+                    dropdownColor: scheme.surface,
+                    items: [
+                      DropdownMenuItem(
+                        value: null,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            "All Branches (Company-Wide)",
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: context.brandText,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      )
-                    : DropdownButtonFormField<String?>(
-                        value: _selectedBranchId,
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          labelText: "Select Branch",
-                          labelStyle: const TextStyle(color: Colors.grey),
-                          prefixIcon: const Icon(
-                            Icons.store_mall_directory_outlined,
-                            color: Colors.grey,
-                          ),
-                          filled: true,
-                          fillColor: isDark ? Colors.grey[900] : Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Colors.grey.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00A36C),
-                            ),
-                          ),
-                        ),
-                        dropdownColor: isDark ? Colors.grey[850] : Colors.white,
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                "All Branches (Company-Wide)",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF00A36C),
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          ..._branches.map(
-                            (branch) => DropdownMenuItem(
-                              value: branch['id'].toString(),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: Text(
-                                  branch['name'].toString(),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _selectedBranchId = value),
                       ),
+                      ..._branches.map(
+                        (branch) => DropdownMenuItem(
+                          value: branch['id'].toString(),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Text(
+                              branch['name'].toString(),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _selectedBranchId = value),
+                  ),
 
                 const SizedBox(height: 30),
 
                 // ==========================================
                 // 2. ANNOUNCEMENT CONTENT
                 // ==========================================
-                Text(
-                  "Announcement Content",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                _sectionLabel("Announcement Content"),
 
                 // KTextInputField kept for the title
                 KTextInputField(
@@ -278,23 +260,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 TextField(
                   controller: _descriptionController,
                   maxLines: 5,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: "Description",
-                    labelStyle: const TextStyle(color: Colors.grey),
                     hintText: "Enter the full announcement details...",
-                    hintStyle: const TextStyle(color: Colors.grey),
-                    filled: true,
-                    fillColor: isDark ? Colors.grey[900] : Colors.white,
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.withOpacity(0.2),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00A36C)),
-                    ),
                   ),
                 ),
 
@@ -303,76 +271,26 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 // ==========================================
                 // 3. SCHEDULE DURATION
                 // ==========================================
-                Text(
-                  "Schedule Duration",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                _sectionLabel("Schedule Duration"),
 
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
+                      child: _dateField(
                         controller: _startDateController,
-                        readOnly: true,
-                        onTap: () => _selectDate(_startDateController),
-                        decoration: InputDecoration(
-                          labelText: "Start Date",
-                          labelStyle: const TextStyle(color: Colors.grey),
-                          prefixIcon: const Icon(
-                            Icons.calendar_today,
-                            size: 18,
-                            color: Colors.grey,
-                          ),
-                          filled: true,
-                          fillColor: isDark ? Colors.grey[900] : Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Colors.grey.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00A36C),
-                            ),
-                          ),
-                        ),
+                        label: "Start Date",
+                        icon: Icons.calendar_today,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextField(
+                      child: _dateField(
                         controller: _endDateController,
-                        readOnly: true,
-                        onTap: () => _selectDate(_endDateController),
-                        decoration: InputDecoration(
-                          labelText: "End Date",
-                          labelStyle: const TextStyle(color: Colors.grey),
-                          prefixIcon: const Icon(
-                            Icons.event_available,
-                            size: 18,
-                            color: Colors.grey,
-                          ),
-                          filled: true,
-                          fillColor: isDark ? Colors.grey[900] : Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Colors.grey.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00A36C),
-                            ),
-                          ),
+                        label: "End Date",
+                        icon: Icons.event_available,
+                        // Can't end before it starts.
+                        notBefore: DateTime.tryParse(
+                          _startDateController.text.trim(),
                         ),
                       ),
                     ),
@@ -390,29 +308,17 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _isPublishing ? null : _handlePublish,
                     icon: _isPublishing
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                              color: Colors.white,
                               strokeWidth: 2,
+                              color: scheme.onPrimary,
                             ),
                           )
                         : const Icon(Icons.send_rounded),
                     label: Text(
                       _isPublishing ? "Publishing..." : "Publish Announcement",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00A36C),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
                     ),
                   ),
                 ),
@@ -420,6 +326,38 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Small bold caption above each group of fields.
+  Widget _sectionLabel(String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// Read-only field that opens a date picker on tap.
+  Widget _dateField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    DateTime? notBefore,
+  }) {
+    return TextField(
+      controller: controller,
+      readOnly: true,
+      onTap: () => _selectDate(controller, notBefore: notBefore),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 18),
       ),
     );
   }
