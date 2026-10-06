@@ -23,6 +23,12 @@ class _InboxState extends State<Inbox> {
 
   Stream<List<Map<String, dynamic>>>? _messagesStream;
 
+  /// Tracks how many messages were on screen last build, so the view only
+  /// jumps when something new actually arrives.
+  int _lastMessageCount = 0;
+
+  static const _emptyChatMessage = "No messages yet. Say hi! 👋";
+
   @override
   void initState() {
     super.initState();
@@ -32,7 +38,14 @@ class _InboxState extends State<Inbox> {
     }
   }
 
-  void _sendMessage() async {
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty || widget.roomId == null) return;
 
@@ -40,257 +53,272 @@ class _InboxState extends State<Inbox> {
 
     try {
       await SupabaseService().sendMessage(roomId: widget.roomId!, text: text);
-      _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to send message: $e"),
-            backgroundColor: Colors.red,
+      if (!mounted) return;
+
+      // Put the text back — clearing before the send succeeded meant a
+      // failed message was simply gone and had to be retyped.
+      _messageController.text = text;
+      _messageController.selection = TextSelection.fromPosition(
+        TextPosition(offset: text.length),
+      );
+
+      final theme = Theme.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Failed to send message: $e",
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onError,
+            ),
           ),
-        );
-      }
+          backgroundColor: theme.colorScheme.error,
+        ),
+      );
     }
   }
 
-  void _scrollToBottom() {
+  /// Scroll down only when a new message lands AND the reader is already at
+  /// the bottom. The old version re-scrolled on every stream rebuild, which
+  /// made scrolling up through history impossible — the list snapped back.
+  void _maybeAutoScroll(int messageCount) {
+    final hasNewMessage = messageCount > _lastMessageCount;
+    _lastMessageCount = messageCount;
+    if (!hasNewMessage) return;
+
     if (_scrollController.hasClients) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent + 50,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+      final position = _scrollController.position;
+      final isNearBottom = position.maxScrollExtent - position.pixels < 200;
+      if (!isNearBottom) return;
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
     final chatReady = context.watch<UserProvider>().isChatReady; // 🚀 new
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.recipientName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: false,
-      ),
-      body: !chatReady // 🚀 new — replaces the whole body while chat isn't ready
-          ? const Center(
+      appBar: AppBar(title: Text(widget.recipientName), centerTitle: false),
+      body:
+          !chatReady // 🚀 new — replaces the whole body while chat isn't ready
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFF00A36C)),
-                  SizedBox(height: 16),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
                   Text(
                     'Setting up secure chat…',
-                    style: TextStyle(color: Colors.grey),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             )
           : Column(
               children: [
-                Expanded(
-                  child: widget.roomId == null || _messagesStream == null
-                      ? const Center(
-                          child: Text(
-                            "No messages yet. Say hi! 👋",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      : StreamBuilder<List<Map<String, dynamic>>>(
-                          stream: _messagesStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return Center(
-                                child: Text(
-                                  "Error loading chats: ${snapshot.error}",
-                                ),
-                              );
-                            }
-                            if (!snapshot.hasData) {
-                              return const Center(
-                                child: CircularProgressIndicator(
-                                  color: Color(0xFF00A36C),
-                                ),
-                              );
-                            }
-
-                            final messages = snapshot.data!;
-
-                            WidgetsBinding.instance.addPostFrameCallback(
-                              (_) => _scrollToBottom(),
-                            );
-
-                            if (messages.isEmpty) {
-                              return const Center(
-                                child: Text(
-                                  "No messages yet. Say hi! 👋",
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              );
-                            }
-
-                            return ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.all(16),
-                              itemCount: messages.length,
-                              itemBuilder: (context, index) {
-                                final msg = messages[index];
-                                final bool isMe =
-                                    msg['sender_id'] == _currentUserId;
-
-                                String timeStr = '';
-                                if (msg['created_at'] != null) {
-                                  timeStr = DateFormat(
-                                    'h:mm a',
-                                  ).format(DateTime.parse(msg['created_at']));
-                                }
-
-                                return Align(
-                                  alignment: isMe
-                                      ? Alignment.centerRight
-                                      : Alignment.centerLeft,
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 10),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    constraints: BoxConstraints(
-                                      maxWidth:
-                                          MediaQuery.of(context).size.width *
-                                          0.75,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isMe
-                                          ? const Color(0xFF00A36C)
-                                          : (isDark
-                                                ? Colors.grey[900]
-                                                : Colors.grey[200]),
-                                      borderRadius: BorderRadius.only(
-                                        topLeft: const Radius.circular(16),
-                                        topRight: const Radius.circular(16),
-                                        bottomLeft: Radius.circular(
-                                          isMe ? 16 : 0,
-                                        ),
-                                        bottomRight: Radius.circular(
-                                          isMe ? 0 : 16,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          msg['message_text'] ?? '',
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            color: isMe
-                                                ? Colors.white
-                                                : (isDark
-                                                      ? Colors.white
-                                                      : Colors.black87),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Align(
-                                          alignment: Alignment.bottomRight,
-                                          child: Text(
-                                            timeStr,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: isMe
-                                                  ? Colors.white.withOpacity(
-                                                      0.6,
-                                                    )
-                                                  : Colors.grey,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isDark ? theme.cardColor : Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 5,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: SafeArea(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _messageController,
-                            maxLines: null,
-                            decoration: InputDecoration(
-                              hintText: "Type a message...",
-                              hintStyle: const TextStyle(color: Colors.grey),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: isDark
-                                  ? Colors.grey[900]
-                                  : Colors.grey[100],
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: _sendMessage,
-                          child: const CircleAvatar(
-                            radius: 22,
-                            backgroundColor: Color(0xFF00A36C),
-                            child: Icon(
-                              Icons.send_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                Expanded(child: _buildMessageList(theme)),
+                _buildComposer(theme),
               ],
             ),
     );
   }
 
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  Widget _buildMessageList(ThemeData theme) {
+    if (widget.roomId == null || _messagesStream == null) {
+      return _buildEmptyState(theme);
+    }
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _messagesStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                "Error loading chats: ${snapshot.error}",
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final messages = snapshot.data!;
+        _maybeAutoScroll(messages.length);
+
+        if (messages.isEmpty) return _buildEmptyState(theme);
+
+        return ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(16),
+          itemCount: messages.length,
+          itemBuilder: (context, index) => _buildBubble(theme, messages[index]),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) => Center(
+    child: Text(
+      _emptyChatMessage,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
+
+  Widget _buildBubble(ThemeData theme, Map<String, dynamic> msg) {
+    final scheme = theme.colorScheme;
+    final bool isMe = msg['sender_id'] == _currentUserId;
+
+    String timeStr = '';
+    if (msg['created_at'] != null) {
+      // Postgres hands these back in UTC. Without toLocal() every message
+      // was stamped two hours behind for a UTC+2 reader.
+      final created = DateTime.parse(msg['created_at']).toLocal();
+      timeStr = DateFormat('h:mm a').format(created);
+    }
+
+    final bubbleColor = isMe ? scheme.primary : scheme.surfaceContainer;
+    final textColor = isMe ? scheme.onPrimary : scheme.onSurface;
+    // Muted version of the text colour: mixed toward the bubble behind it.
+    final timeColor = Color.lerp(textColor, bubbleColor, 0.35)!;
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 0),
+            bottomRight: Radius.circular(isMe ? 0 : 16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              msg['message_text'] ?? '',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 15,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Text(
+                timeStr,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: timeColor,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposer(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
+    // The chat field wants a borderless 24px pill, not the app's standard
+    // 12px outlined input — so enabled/focused are overridden too. Without
+    // overriding focusedBorder the global theme snaps it back to a 12px
+    // green outline the moment it gains focus.
+    const pill = OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(24)),
+      borderSide: BorderSide.none,
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(top: BorderSide(color: scheme.outline)),
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                minLines: 1,
+                // Was `null`, so a long message grew the field without limit
+                // and pushed the conversation off screen.
+                maxLines: 5,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: "Type a message...",
+                  filled: true,
+                  fillColor: scheme.surfaceContainer,
+                  border: pill,
+                  enabledBorder: pill,
+                  focusedBorder: pill,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Rebuilds on its own so typing doesn't rebuild the whole screen.
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _messageController,
+              builder: (context, value, _) {
+                final canSend = value.text.trim().isNotEmpty;
+                return IconButton(
+                  onPressed: canSend ? _sendMessage : null,
+                  tooltip: "Send",
+                  icon: const Icon(Icons.send_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: canSend
+                        ? scheme.primary
+                        : scheme.surfaceContainer,
+                    foregroundColor: canSend
+                        ? scheme.onPrimary
+                        : scheme.onSurfaceVariant,
+                    disabledBackgroundColor: scheme.surfaceContainer,
+                    disabledForegroundColor: scheme.onSurfaceVariant,
+                    minimumSize: const Size(44, 44),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
