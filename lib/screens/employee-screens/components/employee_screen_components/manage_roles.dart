@@ -30,6 +30,39 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  // ==========================================
+  // Helpers
+  // ==========================================
+
+  void _showSnack(String message, {bool isError = false}) {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: isError
+              ? theme.textTheme.bodyMedium?.copyWith(color: scheme.onError)
+              : null,
+        ),
+        backgroundColor: isError ? scheme.error : null,
+      ),
+    );
+  }
+
+  /// `role_permissions` comes back null for a role saved with none, which
+  /// made `as List` throw while building the list.
+  List<dynamic> _permsOf(Map<String, dynamic> role) =>
+      (role['role_permissions'] as List?) ?? const [];
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
@@ -40,11 +73,12 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
         setState(() {
           _allPermissions = perms;
           _roles = roles;
-          _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint("Error loading role data: $e");
+      _showSnack("Couldn't load roles: $e", isError: true);
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -60,10 +94,10 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
         _selectedPermissionIds = {};
       } else {
         // Editing an existing role
-        _nameController.text = role['role_name'];
-        _selectedPermissionIds = (role['role_permissions'] as List)
-            .map((p) => p['permission_id'] as String)
-            .toSet();
+        _nameController.text = role['role_name']?.toString() ?? '';
+        _selectedPermissionIds = _permsOf(
+          role,
+        ).map((p) => p['permission_id'] as String).toSet();
       }
     });
   }
@@ -78,13 +112,10 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
   }
 
   Future<void> _saveCurrentRole() async {
-    if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Role name cannot be empty"),
-          backgroundColor: Colors.red,
-        ),
-      );
+    final name = _nameController.text.trim();
+
+    if (name.isEmpty) {
+      _showSnack("Role name cannot be empty", isError: true);
       return;
     }
 
@@ -92,28 +123,19 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
     try {
       await _service.saveRoleWithPermissions(
         roleId: _selectedRole?['id'],
-        roleName: _nameController.text,
+        roleName: name, // was the raw, untrimmed field value
         permissionIds: _selectedPermissionIds.toList(),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Role saved successfully!"),
-          backgroundColor: Color(0xFF00A36C),
-        ),
-      );
-
+      if (!mounted) return;
+      _showSnack("Role saved.");
+      setState(() => _isSaving = false);
       _closeEditor(); // 🚀 Safely close the panel after saving
       await _loadData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error saving role: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      _showSnack("Error saving role: $e", isError: true);
     }
   }
 
@@ -131,27 +153,44 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
             child: const Text("Cancel"),
           ),
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+            child: const Text("Delete"),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      setState(() => _isLoading = true);
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
       await _service.deleteUnifiedRole(roleId);
+      if (!mounted) return;
       if (_selectedRole?['id'] == roleId) _closeEditor();
       await _loadData();
+    } catch (e) {
+      // Was unguarded: a failed delete left _isLoading stuck true and
+      // _loadData was never reached, so the list silently stopped updating.
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showSnack("Couldn't delete the role: $e", isError: true);
     }
   }
 
+  // ==========================================
+  // Build
+  // ==========================================
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     if (_isLoading && _roles.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return LayoutBuilder(
@@ -173,9 +212,7 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
                 decoration: isWeb
                     ? BoxDecoration(
                         border: Border(
-                          right: BorderSide(
-                            color: Colors.grey.withOpacity(0.2),
-                          ),
+                          right: BorderSide(color: scheme.outline),
                         ),
                       )
                     : null,
@@ -186,82 +223,26 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 50),
-                          backgroundColor: const Color(0xFF00A36C),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
                         ),
                         onPressed: () => _selectRole(null),
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        label: const Text(
-                          "Create New Role",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text("Create New Role"),
                       ),
                     ),
                     Expanded(
                       child: _roles.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
                                 "No custom roles created yet.",
-                                style: TextStyle(color: Colors.grey),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
                             )
                           : ListView.builder(
                               itemCount: _roles.length,
-                              itemBuilder: (context, index) {
-                                final role = _roles[index];
-                                final isSelected =
-                                    _selectedRole?['id'] == role['id'];
-                                final permCount =
-                                    (role['role_permissions'] as List).length;
-
-                                return Container(
-                                  color: isSelected
-                                      ? const Color(
-                                          0xFF00A36C,
-                                        ).withOpacity(0.05)
-                                      : Colors.transparent,
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: isSelected
-                                          ? const Color(0xFF00A36C)
-                                          : Colors.grey.shade200,
-                                      child: Icon(
-                                        Icons.badge,
-                                        color: isSelected
-                                            ? Colors.white
-                                            : Colors.grey,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    title: Text(
-                                      role['role_name'],
-                                      style: TextStyle(
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                      ),
-                                    ),
-                                    subtitle: Text("$permCount Permissions"),
-                                    trailing: IconButton(
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.redAccent,
-                                        size: 20,
-                                      ),
-                                      onPressed: () => _deleteRole(
-                                        role['id'],
-                                        role['role_name'],
-                                      ),
-                                    ),
-                                    onTap: () => _selectRole(role),
-                                  ),
-                                );
-                              },
+                              itemBuilder: (context, index) =>
+                                  _buildRoleTile(theme, _roles[index]),
                             ),
                     ),
                   ],
@@ -275,10 +256,12 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
                 flex: 2,
                 child: _isEditing
                     ? _buildEditorPanel(isWeb)
-                    : const Center(
+                    : Center(
                         child: Text(
                           "Select a role or create a new one.",
-                          style: TextStyle(color: Colors.grey),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
               ),
@@ -288,12 +271,57 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
     );
   }
 
+  Widget _buildRoleTile(ThemeData theme, Map<String, dynamic> role) {
+    final scheme = theme.colorScheme;
+    final isSelected = _selectedRole?['id'] == role['id'];
+    final permCount = _permsOf(role).length;
+
+    return Container(
+      color: isSelected ? scheme.primaryContainer : Colors.transparent,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isSelected
+              ? scheme.primary
+              : scheme.surfaceContainer,
+          child: Icon(
+            Icons.badge,
+            color: isSelected ? scheme.onPrimary : scheme.onSurfaceVariant,
+            size: 18,
+          ),
+        ),
+        title: Text(
+          role['role_name']?.toString() ?? 'Unnamed role',
+          style: isSelected
+              ? theme.textTheme.titleSmall
+              : theme.textTheme.bodyLarge,
+        ),
+        subtitle: Text(
+          permCount == 1 ? "1 Permission" : "$permCount Permissions",
+        ),
+        trailing: IconButton(
+          tooltip: "Delete role",
+          icon: Icon(Icons.delete_outline, color: scheme.error, size: 20),
+          onPressed: () => _deleteRole(
+            role['id'],
+            role['role_name']?.toString() ?? 'this role',
+          ),
+        ),
+        onTap: () => _selectRole(role),
+      ),
+    );
+  }
+
   // THE EDITOR UI
   Widget _buildEditorPanel(bool isWeb) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     // Group permissions by their Module
     final Map<String, List<Map<String, dynamic>>> groupedPerms = {};
     for (var p in _allPermissions) {
-      groupedPerms.putIfAbsent(p['module'], () => []).add(p);
+      // A null module used to blow up the Map<String, …> key.
+      final module = p['module']?.toString() ?? 'other';
+      groupedPerms.putIfAbsent(module, () => []).add(p);
     }
 
     return Column(
@@ -306,8 +334,8 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
               onPressed: _closeEditor,
             ),
             title: Text(_selectedRole == null ? "New Role" : "Edit Role"),
-            elevation: 0,
             backgroundColor: Colors.transparent,
+            centerTitle: false,
           ),
 
         Expanded(
@@ -318,89 +346,43 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
                 _selectedRole == null
                     ? "Create Custom Role"
                     : "Edit Role Configuration",
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: theme.textTheme.headlineMedium,
               ),
               const SizedBox(height: 24),
 
               TextField(
                 controller: _nameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: "Job Title / Role Name (e.g., Shift Supervisor)",
-                  border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.work_outline),
                 ),
               ),
               const SizedBox(height: 32),
 
-              const Text(
+              Text(
                 "Assign Permissions",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.grey,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),
 
-              // The grouped toggle switches
-              ...groupedPerms.entries.map((entry) {
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ExpansionTile(
-                    title: Text(
-                      entry.key.toUpperCase(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
+              if (groupedPerms.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    "No permissions are defined for this app yet.",
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
                     ),
-                    initiallyExpanded: true,
-                    children: entry.value.map((perm) {
-                      final isSelected = _selectedPermissionIds.contains(
-                        perm['id'],
-                      );
-                      return CheckboxListTile(
-                        activeColor: const Color(0xFF00A36C),
-                        title: Text(
-                          perm['action_name']
-                              .toString()
-                              .replaceAll('_', ' ')
-                              .toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          perm['description'],
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        value: isSelected,
-                        onChanged: (bool? val) {
-                          setState(() {
-                            if (val == true) {
-                              _selectedPermissionIds.add(perm['id']);
-                            } else {
-                              _selectedPermissionIds.remove(perm['id']);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
                   ),
-                );
-              }).toList(),
+                ),
+
+              // The grouped toggle switches
+              ...groupedPerms.entries.map(
+                (entry) => _buildModuleCard(theme, entry.key, entry.value),
+              ),
             ],
           ),
         ),
@@ -409,66 +391,98 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            border: Border(
-              top: BorderSide(color: Colors.grey.withOpacity(0.2)),
-            ),
+            color: scheme.surface,
+            border: Border(top: BorderSide(color: scheme.outline)),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _closeEditor,
-                  child: const Text(
-                    "Cancel",
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontWeight: FontWeight.bold,
-                    ),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isSaving ? null : _closeEditor,
+                    child: const Text("Cancel"),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: const Color(0xFF00A36C),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveCurrentRole,
+                    child: _isSaving
+                        ? SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: scheme.onPrimary,
+                            ),
+                          )
+                        : const Text("Save Configurations"),
                   ),
-                  onPressed: _isSaving ? null : _saveCurrentRole,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          "Save Configurations",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildModuleCard(
+    ThemeData theme,
+    String module,
+    List<Map<String, dynamic>> perms,
+  ) {
+    final scheme = theme.colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        title: Text(
+          module.toUpperCase(),
+          style: theme.textTheme.titleSmall?.copyWith(letterSpacing: 1.2),
+        ),
+        initiallyExpanded: true,
+        // The card already draws a border; without these the tile adds its
+        // own top/bottom rules when expanded.
+        shape: const Border(),
+        collapsedShape: const Border(),
+        textColor: scheme.onSurface,
+        collapsedTextColor: scheme.onSurface,
+        iconColor: scheme.onSurfaceVariant,
+        collapsedIconColor: scheme.onSurfaceVariant,
+        children: perms.map((perm) {
+          final isSelected = _selectedPermissionIds.contains(perm['id']);
+          final description = perm['description']?.toString();
+
+          return CheckboxListTile(
+            title: Text(
+              perm['action_name'].toString().replaceAll('_', ' ').toUpperCase(),
+              style: theme.textTheme.labelLarge,
+            ),
+            subtitle: description == null || description.isEmpty
+                ? null
+                : Text(
+                    description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+            value: isSelected,
+            onChanged: (bool? val) {
+              setState(() {
+                if (val == true) {
+                  _selectedPermissionIds.add(perm['id']);
+                } else {
+                  _selectedPermissionIds.remove(perm['id']);
+                }
+              });
+            },
+          );
+        }).toList(),
+      ),
     );
   }
 }
