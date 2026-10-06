@@ -11,7 +11,6 @@ class TransferScreen extends StatefulWidget {
 }
 
 class _TransferScreenState extends State<TransferScreen> {
-  // Controllers and State
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _branchNameController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
@@ -28,6 +27,14 @@ class _TransferScreenState extends State<TransferScreen> {
     super.initState();
     _dateController.text = DateFormat('yyyy-MM-dd').format(_selectedDate);
     _loadBranches();
+  }
+
+  @override
+  void dispose() {
+    // Neither controller was being disposed.
+    _dateController.dispose();
+    _branchNameController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBranches() async {
@@ -52,7 +59,6 @@ class _TransferScreenState extends State<TransferScreen> {
     });
   }
 
-  // --- Search Logic (With Web Null Fix) ---
   void _onSearchChanged(String query) async {
     _searchQuery = query;
     if (query.trim().isEmpty) {
@@ -66,12 +72,11 @@ class _TransferScreenState extends State<TransferScreen> {
     setState(() => _isSearching = true);
     try {
       final dynamic results = await SupabaseService().searchEmployees(query);
+      if (!mounted) return;
       setState(() {
-        if (results == null) {
-          _searchResults = [];
-        } else {
-          _searchResults = List<Map<String, dynamic>>.from(results);
-        }
+        _searchResults = results == null
+            ? []
+            : List<Map<String, dynamic>>.from(results);
       });
     } catch (e) {
       debugPrint("Search error: $e");
@@ -81,23 +86,13 @@ class _TransferScreenState extends State<TransferScreen> {
     }
   }
 
-  // --- Date Picker Logic ---
   Future<void> _selectDate() async {
+    // The builder override is gone — datePickerTheme handles both modes.
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(
-              context,
-            ).colorScheme.copyWith(primary: const Color(0xFF00A36C)),
-          ),
-          child: child!,
-        );
-      },
     );
     if (pickedDate != null) {
       setState(() {
@@ -107,15 +102,14 @@ class _TransferScreenState extends State<TransferScreen> {
     }
   }
 
-  // --- Submission Logic ---
   Future<void> _processTransfer() async {
+    final scheme = Theme.of(context).colorScheme;
+
     if (_selectedEmployee == null ||
         _branchNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Please select an employee and enter a target branch."),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
         ),
       );
       return;
@@ -133,14 +127,7 @@ class _TransferScreenState extends State<TransferScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Transfer successfully processed!",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Color(0xFF00A36C),
-            behavior: SnackBarBehavior.floating,
-          ),
+          const SnackBar(content: Text("Transfer processed")),
         );
         Navigator.pop(context);
       }
@@ -149,8 +136,7 @@ class _TransferScreenState extends State<TransferScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Transfer failed: $e"),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
+            backgroundColor: scheme.error,
           ),
         );
       }
@@ -162,22 +148,16 @@ class _TransferScreenState extends State<TransferScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Process Transfer',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        elevation: 0,
+        title: const Text('Process Transfer'),
         centerTitle: true,
       ),
-      // 🚀 Apply Web constraints to center the content
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1000),
-          // 🚀 REMOVED SingleChildScrollView. Now uses exact TerminationScreen layout flow!
           child: Padding(
             padding: const EdgeInsets.only(
               top: 24.0,
@@ -191,121 +171,101 @@ class _TransferScreenState extends State<TransferScreen> {
                 // ==========================================
                 // 1. EMPLOYEE SELECTION
                 // ==========================================
-                Text(
-                  "Select Employee",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
+                Text("Select Employee", style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
 
                 if (_selectedEmployee == null) ...[
                   SearchBar(
-                    elevation: WidgetStateProperty.all(0),
-                    backgroundColor: WidgetStateProperty.all(
-                      isDark ? Colors.grey[900] : Colors.white,
-                    ),
                     hintText: "Search employee to transfer...",
                     onChanged: _onSearchChanged,
                     padding: WidgetStateProperty.all(
                       const EdgeInsets.symmetric(horizontal: 16),
                     ),
-                    leading: const Icon(Icons.search, color: Colors.grey),
-                    shape: WidgetStateProperty.all(
-                      RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                      ),
+                    leading: Icon(
+                      Icons.search,
+                      color: scheme.onSurfaceVariant,
                     ),
                     trailing: [
                       if (_isSearching)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.all(8.0),
                           child: SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF00A36C),
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         ),
                     ],
                   ),
                   const SizedBox(height: 10),
 
-                  // 🚀 EXPANDED LIST: Takes up the middle space dynamically
                   Expanded(
                     child: _searchResults.isEmpty
                         ? Center(
-                            child: Text(
-                              _searchQuery.isEmpty
-                                  ? "Search for an employee to begin"
-                                  : "No employees found",
-                              style: const TextStyle(color: Colors.grey),
-                            ),
-                          )
+                      child: Text(
+                        _searchQuery.isEmpty
+                            ? "Search for an employee to begin"
+                            : "No employees found",
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
                         : ListView.builder(
-                            itemCount: _searchResults.length,
-                            itemBuilder: (context, index) {
-                              final emp = _searchResults[index];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.grey[900]?.withOpacity(0.5)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: Colors.grey.withOpacity(0.1),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4.0,
-                                  ),
-                                  child: EmployeeTile(
-                                    () => setState(() {
-                                      _selectedEmployee = emp;
-                                      _searchResults = [];
-                                      _searchQuery = "";
-                                    }),
-                                    emp['full_name'] ?? "Unknown",
-                                    const Icon(
-                                      Icons.add_circle_outline,
-                                      color: Color(0xFF00A36C),
-                                    ),
-                                    emp['branch'] ?? "Main Branch",
-                                    emp['role'] ?? "Staff",
-                                  ),
-                                ),
-                              );
-                            },
+                      itemCount: _searchResults.length,
+                      itemBuilder: (context, index) {
+                        final emp = _searchResults[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: scheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: scheme.outline),
                           ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4.0,
+                            ),
+                            child: EmployeeTile(
+                                  () => setState(() {
+                                _selectedEmployee = emp;
+                                _searchResults = [];
+                                _searchQuery = "";
+                              }),
+                              emp['full_name'] ?? "Unknown",
+                              Icon(
+                                Icons.add_circle_outline,
+                                color: scheme.primary,
+                              ),
+                              emp['branch'] ?? "Main Branch",
+                              emp['role'] ?? "Staff",
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ] else ...[
-                  // Selected Employee State
+                  // Selected employee — the tinted container is the
+                  // primaryContainer pair, so one value instead of an
+                  // isDark ternary over two opacities.
                   Container(
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF00A36C).withOpacity(0.1)
-                          : const Color(0xFF00A36C).withOpacity(0.05),
+                      color: scheme.primaryContainer,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: const Color(0xFF00A36C).withOpacity(0.3),
+                        color: scheme.primary.withOpacity(0.3),
                       ),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: EmployeeTile(
-                        () {}, // Empty tap
+                            () {},
                         _selectedEmployee!['full_name'],
                         IconButton(
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.cancel,
-                            color: Color(0xFF00A36C),
+                            color: scheme.onPrimaryContainer,
                           ),
                           onPressed: () =>
                               setState(() => _selectedEmployee = null),
@@ -316,71 +276,39 @@ class _TransferScreenState extends State<TransferScreen> {
                       ),
                     ),
                   ),
-
-                  // 🚀 SPACER: Pushes the "Transfer Details" safely to the bottom just like TerminationScreen
                   const Spacer(),
                 ],
 
                 if (_selectedEmployee != null) ...[
                   const SizedBox(height: 20),
-                  Divider(color: Colors.grey.withOpacity(0.1)),
+                  const Divider(),
                   const SizedBox(height: 20),
                 ],
 
                 // ==========================================
                 // 2. TRANSFER DETAILS
                 // ==========================================
-                Text(
-                  "Transfer Details",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.blueGrey,
-                    fontSize: 14,
-                  ),
-                ),
+                Text("Transfer Details", style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
 
-                // Target Branch Input
+                // inputDecorationTheme supplies fill, borders and radius.
                 TextField(
                   controller: _branchNameController,
                   onChanged: _onBranchSearchChanged,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: "Select target branch...",
-                    hintStyle: const TextStyle(color: Colors.grey),
-                    filled: true,
-                    fillColor: isDark ? Colors.grey[900] : Colors.white,
-                    prefixIcon: const Icon(Icons.business, color: Colors.grey),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.withOpacity(0.2),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00A36C)),
-                    ),
+                    prefixIcon: Icon(Icons.business),
                   ),
                 ),
 
-                // Branch Suggestions Overlay
                 if (_branchSuggestions.isNotEmpty)
                   Container(
-                    constraints: const BoxConstraints(
-                      maxHeight: 140,
-                    ), // 🚀 Strict height so it doesn't break the layout
+                    constraints: const BoxConstraints(maxHeight: 140),
                     margin: const EdgeInsets.only(top: 8),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.grey[850] : Colors.white,
+                      color: scheme.surface,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                      border: Border.all(color: Colors.grey.withOpacity(0.1)),
+                      border: Border.all(color: scheme.outline),
                     ),
                     child: ListView.builder(
                       shrinkWrap: true,
@@ -391,13 +319,12 @@ class _TransferScreenState extends State<TransferScreen> {
                           leading: const Icon(
                             Icons.location_on_outlined,
                             size: 20,
-                            color: Colors.grey,
                           ),
                           title: Text(name),
                           onTap: () {
                             setState(() {
                               _branchNameController.text = name;
-                              _branchSuggestions = []; // Hide suggestions
+                              _branchSuggestions = [];
                             });
                           },
                         );
@@ -407,58 +334,27 @@ class _TransferScreenState extends State<TransferScreen> {
 
                 const SizedBox(height: 16),
 
-                // Date Picker Field
                 TextField(
                   controller: _dateController,
                   readOnly: true,
                   onTap: _selectDate,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: "Transfer Date",
-                    labelStyle: const TextStyle(color: Colors.grey),
-                    filled: true,
-                    fillColor: isDark ? Colors.grey[900] : Colors.white,
-                    prefixIcon: const Icon(
-                      Icons.date_range,
-                      color: Colors.grey,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.withOpacity(0.2),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00A36C)),
-                    ),
+                    prefixIcon: Icon(Icons.date_range),
                   ),
                 ),
 
                 const SizedBox(height: 30),
 
                 // ==========================================
-                // 3. ACTION BUTTON
+                // 3. ACTION
                 // ==========================================
                 SizedBox(
                   width: double.infinity,
                   height: 55,
                   child: ElevatedButton(
-                    onPressed: _processTransfer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00A36C),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      "Process Transfer",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    onPressed: _isSearching ? null : _processTransfer,
+                    child: const Text("Process Transfer"),
                   ),
                 ),
               ],
