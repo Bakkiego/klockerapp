@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/user_provider.dart';
+import '../utils/custom_theme/k_palette.dart';
 import '../utils/pdf_service.dart';
 
 class EmployeePayslipScreen extends StatefulWidget {
@@ -29,37 +30,39 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
 
-      if (user != null) {
-        // 1. Fetch Payslips
-        final data = await SupabaseService().getMyPayslips();
+      // No session — nothing to fetch, but the `finally` below still has to
+      // clear the spinner. The old version left it spinning forever.
+      if (user == null) return;
 
-        // 2. Fetch the user's specific deduction rules to show in the breakdown
-        final profile = await supabase
-            .from('profiles')
-            .select('salary_configs(default_deductions)')
-            .eq('id', user.id)
-            .maybeSingle();
+      // 1. Fetch Payslips
+      final data = await SupabaseService().getMyPayslips();
 
-        List<dynamic> rules = [];
-        if (profile != null && profile['salary_configs'] != null) {
-          final configs = profile['salary_configs'];
-          if (configs is List && configs.isNotEmpty) {
-            rules = configs[0]['default_deductions'] ?? [];
-          } else if (configs is Map) {
-            rules = configs['default_deductions'] ?? [];
-          }
+      // 2. Fetch the user's specific deduction rules to show in the breakdown
+      final profile = await supabase
+          .from('profiles')
+          .select('salary_configs(default_deductions)')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      List<dynamic> rules = [];
+      if (profile != null && profile['salary_configs'] != null) {
+        final configs = profile['salary_configs'];
+        if (configs is List && configs.isNotEmpty) {
+          rules = configs[0]['default_deductions'] ?? [];
+        } else if (configs is Map) {
+          rules = configs['default_deductions'] ?? [];
         }
+      }
 
-        if (mounted) {
-          setState(() {
-            _payslips = data;
-            _myDeductionRules = rules;
-            _isLoading = false;
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _payslips = data;
+          _myDeductionRules = rules;
+        });
       }
     } catch (e) {
       debugPrint("Error fetching payslips: $e");
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -67,55 +70,33 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
+
+    // Read once, unconditionally — watching inside an `if` means the screen
+    // wouldn't rebuild on a currency change while the list is empty.
+    final userProvider = context.watch<UserProvider>();
+    final currency = userProvider.currencySymbol;
+    final companyName = userProvider.companyName;
+    final employeeName = userProvider.fullName ?? "Employee";
+
+    final Widget body;
 
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
-        body: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-        ),
-      );
-    }
-
-    if (_payslips.isEmpty) {
-      return Scaffold(
-        backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
-        appBar: AppBar(
-          title: const Text(
-            'My Payslips',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          centerTitle: true,
-          elevation: 0,
-        ),
-        body: const Center(
-          child: Text(
-            "No payslips generated yet.",
-            style: TextStyle(color: Colors.grey),
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_payslips.isEmpty) {
+      body = Center(
+        child: Text(
+          "No payslips generated yet.",
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: scheme.onSurfaceVariant,
           ),
         ),
       );
-    }
+    } else {
+      final latestPayslip = _payslips.first;
+      final history = _payslips.skip(1).toList();
 
-    final latestPayslip = _payslips.first;
-    final history = _payslips.length > 1 ? _payslips.sublist(1) : [];
-
-    final currency = context.watch<UserProvider>().currencySymbol;
-    final companyName = context.read<UserProvider>().companyName;
-    final employeeName = context.read<UserProvider>().fullName ?? "Employee";
-
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
-      appBar: AppBar(
-        title: const Text(
-          'My Payslips',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: SafeArea(
+      body = SafeArea(
         // 🚀 WEB FIX: Center and Constrain the width
         child: Center(
           child: ConstrainedBox(
@@ -125,15 +106,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Latest Payslip",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white70 : Colors.blueGrey,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
+                  _sectionLabel(theme, "Latest Payslip"),
                   const SizedBox(height: 12),
 
                   LatestPayslipCard(
@@ -148,15 +121,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                   const SizedBox(height: 32),
 
                   if (history.isNotEmpty) ...[
-                    Text(
-                      "Payment History",
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white70 : Colors.blueGrey,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
+                    _sectionLabel(theme, "Payment History"),
                     const SizedBox(height: 12),
 
                     PayslipHistoryList(
@@ -172,9 +137,23 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
             ),
           ),
         ),
-      ),
+      );
+    }
+
+    // One Scaffold instead of three near-identical ones.
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Payslips')),
+      body: body,
     );
   }
+
+  Widget _sectionLabel(ThemeData theme, String text) => Text(
+    text,
+    style: theme.textTheme.titleSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      letterSpacing: 1.1,
+    ),
+  );
 }
 
 // ==========================================
@@ -196,39 +175,50 @@ class LatestPayslipCard extends StatelessWidget {
     required this.deductionRules,
   });
 
+  static double _num(dynamic v) => double.tryParse(v?.toString() ?? '0') ?? 0.0;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     // 🚀 DECIMAL FIX: Format all values to exactly 2 decimal places
-    final netPay =
-        (double.tryParse(payslip['net_pay']?.toString() ?? '0') ?? 0.0)
-            .toStringAsFixed(2);
-    final grossPayVal =
-        double.tryParse(payslip['gross_pay']?.toString() ?? '0') ?? 0.0;
-    final totalTaxVal =
-        double.tryParse(payslip['tax']?.toString() ?? '0') ?? 0.0;
-    final totalDedVal =
-        double.tryParse(payslip['deductions']?.toString() ?? '0') ?? 0.0;
+    final netPay = _num(payslip['net_pay']).toStringAsFixed(2);
+    final grossPayVal = _num(payslip['gross_pay']);
+    final totalTaxVal = _num(payslip['tax']);
+    final totalDedVal = _num(payslip['deductions']);
 
     final String currentStatus = payslip['status'] ?? 'Pending';
-    final bool isPaid = currentStatus.toLowerCase() == 'paid';
+    final (statusBg, statusFg) = context.status.forStatus(currentStatus);
+    final isPaid = currentStatus.toLowerCase() == 'paid';
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: isDark ? theme.colorScheme.surface : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+    // Build the deduction rows once so the amounts can be reconciled against
+    // the stored total below.
+    final deductionRows = <Widget>[];
+    double itemisedDeductions = 0.0;
+
+    for (final rule in deductionRules) {
+      final double ruleValue = _num(rule['value']);
+      final double ruleAmount = rule['type'] == 'percentage'
+          ? grossPayVal * (ruleValue / 100)
+          : ruleValue;
+
+      itemisedDeductions += ruleAmount;
+      deductionRows.add(
+        _buildListRow(
+          context,
+          rule['name'] ?? "Deduction",
+          "- $currency${ruleAmount.toStringAsFixed(2)}",
+          isPositive: false,
+        ),
+      );
+    }
+
+    // Anything in payslip.deductions that the rules don't account for.
+    final remainder = totalDedVal - itemisedDeductions;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           // --- HEADER: MONTH & STATUS ---
@@ -243,10 +233,7 @@ class LatestPayslipCard extends StatelessWidget {
               children: [
                 Text(
                   payslip['month_year'] ?? "Current Month",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: theme.textTheme.titleLarge,
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -255,15 +242,8 @@ class LatestPayslipCard extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: isPaid
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.orange.withOpacity(0.1),
+                    color: statusBg,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isPaid
-                          ? Colors.green.withOpacity(0.3)
-                          : Colors.orange.withOpacity(0.3),
-                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -271,15 +251,13 @@ class LatestPayslipCard extends StatelessWidget {
                       Icon(
                         isPaid ? Icons.check_circle : Icons.pending_actions,
                         size: 16,
-                        color: isPaid ? Colors.green : Colors.orange,
+                        color: statusFg,
                       ),
                       const SizedBox(width: 6),
                       Text(
                         currentStatus.toUpperCase(),
-                        style: TextStyle(
-                          color: isPaid ? Colors.green : Colors.orange,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: statusFg,
                           letterSpacing: 1.1,
                         ),
                       ),
@@ -289,137 +267,86 @@ class LatestPayslipCard extends StatelessWidget {
                 const SizedBox(height: 24),
 
                 // --- NET PAY ---
-                const Text(
+                Text(
                   "NET PAY",
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                     letterSpacing: 1.2,
                   ),
                 ),
                 Text(
                   "$currency$netPay",
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF00A36C),
+                  style: theme.textTheme.displayLarge?.copyWith(
+                    color: context.brandText,
                   ),
                 ),
               ],
             ),
           ),
 
-          Divider(color: Colors.grey.withOpacity(0.1), height: 1),
+          const Divider(height: 1),
 
           // --- 🚀 DYNAMIC ITEMIZED BREAKDOWN ---
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.grey[900]?.withOpacity(0.5)
-                  : Colors.grey[50],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-              ),
-            ),
+            color: scheme.surfaceContainer,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Earnings",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
-                  ),
-                ),
+                _breakdownHeading(theme, "Earnings"),
                 const SizedBox(height: 8),
                 _buildListRow(
+                  context,
                   "Gross Pay",
                   "+ $currency${grossPayVal.toStringAsFixed(2)}",
                   isPositive: true,
                 ),
 
                 const SizedBox(height: 16),
-                const Text(
-                  "Deductions",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
-                  ),
-                ),
+                _breakdownHeading(theme, "Deductions"),
                 const SizedBox(height: 8),
 
                 if (totalTaxVal > 0)
                   _buildListRow(
+                    context,
                     "Tax (PAYE)",
                     "- $currency${totalTaxVal.toStringAsFixed(2)}",
                     isPositive: false,
                   ),
 
                 // Map through actual deduction rules (like UIF)
-                ...deductionRules.map((rule) {
-                  double ruleAmount = 0.0;
-                  if (rule['type'] == 'percentage') {
-                    ruleAmount =
-                        grossPayVal *
-                        ((double.tryParse(rule['value'].toString()) ?? 0.0) /
-                            100);
-                  } else {
-                    ruleAmount =
-                        double.tryParse(rule['value'].toString()) ?? 0.0;
-                  }
+                ...deductionRows,
 
-                  return _buildListRow(
-                    rule['name'] ?? "Deduction",
-                    "- $currency${ruleAmount.toStringAsFixed(2)}",
-                    isPositive: false,
-                  );
-                }),
-
-                if (deductionRules.isEmpty &&
-                    totalTaxVal == 0 &&
-                    totalDedVal > 0)
+                if (remainder > 0.01)
                   _buildListRow(
+                    context,
                     "Other Deductions",
-                    "- $currency${totalDedVal.toStringAsFixed(2)}",
+                    "- $currency${remainder.toStringAsFixed(2)}",
                     isPositive: false,
                   ),
 
+                if (totalTaxVal == 0 &&
+                    deductionRows.isEmpty &&
+                    remainder <= 0.01)
+                  Text(
+                    "No deductions on this payslip.",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+
                 const SizedBox(height: 16),
-                Divider(color: Colors.grey.withOpacity(0.2)),
+                const Divider(),
                 const SizedBox(height: 16),
 
                 // --- EXPORT BUTTON ---
                 ElevatedButton.icon(
-                  onPressed: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Generating Official PDF..."),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                    await PdfService.generateAndSharePayslip(
-                      payslip: payslip,
-                      employeeName: employeeName,
-                      companyName: companyName,
-                      currencySymbol: currency,
-                    );
-                  },
+                  onPressed: () => _downloadPdf(context, payslip),
                   icon: const Icon(Icons.download_rounded, size: 18),
-                  label: const Text(
-                    "Download Payslip PDF",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  label: const Text("Download Payslip PDF"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00A36C),
-                    foregroundColor: Colors.white,
                     minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    elevation: 0,
                   ),
                 ),
               ],
@@ -430,22 +357,77 @@ class LatestPayslipCard extends StatelessWidget {
     );
   }
 
+  Widget _breakdownHeading(ThemeData theme, String text) => Text(
+    text,
+    style: theme.textTheme.titleSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    ),
+  );
+
+  Future<void> _downloadPdf(
+    BuildContext context,
+    Map<String, dynamic> slip,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final errorStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: scheme.onError);
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text("Generating Official PDF..."),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      await PdfService.generateAndSharePayslip(
+        payslip: slip,
+        employeeName: employeeName,
+        companyName: companyName,
+        currencySymbol: currency,
+      );
+    } catch (e) {
+      // Previously unguarded — a PDF failure threw into the void and the
+      // employee just saw nothing happen.
+      debugPrint("Payslip PDF failed: $e");
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text("Couldn't generate the PDF.", style: errorStyle),
+          backgroundColor: scheme.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildListRow(
+    BuildContext context,
     String title,
     String amount, {
     required bool isPositive,
   }) {
+    final theme = Theme.of(context);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Expanded(
+            child: Text(
+              title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
           Text(
             amount,
-            style: TextStyle(
+            style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
-              color: isPositive ? const Color(0xFF00A36C) : Colors.redAccent,
+              color: isPositive ? context.brandText : theme.colorScheme.error,
             ),
           ),
         ],
@@ -458,7 +440,7 @@ class LatestPayslipCard extends StatelessWidget {
 // --- PAYSLIP HISTORY LIST WIDGET ---
 // ==========================================
 class PayslipHistoryList extends StatelessWidget {
-  final List<dynamic> history;
+  final List<Map<String, dynamic>> history;
   final String currency;
   final String? companyName;
   final String employeeName;
@@ -474,7 +456,7 @@ class PayslipHistoryList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     return ListView.builder(
       physics: const NeverScrollableScrollPhysics(),
@@ -482,67 +464,47 @@ class PayslipHistoryList extends StatelessWidget {
       itemCount: history.length,
       itemBuilder: (context, index) {
         final item = history[index];
-        final isPaid = (item['status'] ?? '').toLowerCase() == 'paid';
+        final status = (item['status'] ?? 'Pending').toString();
+        final isPaid = status.toLowerCase() == 'paid';
+        final (statusBg, statusFg) = context.status.forStatus(status);
 
         // 🚀 DECIMAL FIX FOR HISTORY LIST TOO
         final netPayStr =
             (double.tryParse(item['net_pay']?.toString() ?? '0') ?? 0.0)
                 .toStringAsFixed(2);
 
-        return Container(
+        return Card(
           margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: isDark ? theme.colorScheme.surface : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.withOpacity(0.1)),
-          ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 8,
             ),
             leading: CircleAvatar(
-              backgroundColor: isPaid
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.orange.withOpacity(0.1),
+              backgroundColor: statusBg,
               child: Icon(
                 isPaid ? Icons.check_circle : Icons.pending_actions,
-                color: isPaid ? Colors.green : Colors.orange,
+                color: statusFg,
                 size: 20,
               ),
             ),
             title: Text(
               item['month_year'] ?? "Unknown",
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleSmall,
             ),
-            subtitle: Text("Status: ${item['status'] ?? 'Pending'}"),
+            subtitle: Text("Status: $status"),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  "$currency$netPayStr",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                Text("$currency$netPayStr", style: theme.textTheme.titleMedium),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.download_rounded, color: Colors.grey),
-                  onPressed: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Downloading PDF..."),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                    await PdfService.generateAndSharePayslip(
-                      payslip: item,
-                      employeeName: employeeName,
-                      companyName: companyName,
-                      currencySymbol: currency,
-                    );
-                  },
+                  tooltip: "Download PDF",
+                  icon: Icon(
+                    Icons.download_rounded,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  onPressed: () => _downloadPdf(context, item),
                 ),
               ],
             ),
@@ -550,5 +512,40 @@ class PayslipHistoryList extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _downloadPdf(
+    BuildContext context,
+    Map<String, dynamic> slip,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final errorStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: scheme.onError);
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text("Downloading PDF..."),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      await PdfService.generateAndSharePayslip(
+        payslip: slip,
+        employeeName: employeeName,
+        companyName: companyName,
+        currencySymbol: currency,
+      );
+    } catch (e) {
+      debugPrint("Payslip PDF failed: $e");
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text("Couldn't generate the PDF.", style: errorStyle),
+          backgroundColor: scheme.error,
+        ),
+      );
+    }
   }
 }
