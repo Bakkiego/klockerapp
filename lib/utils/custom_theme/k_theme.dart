@@ -242,6 +242,15 @@ ThemeData buildKTheme({
       surfaceTintColor: Colors.transparent,
       headerBackgroundColor: scheme.primary,
       headerForegroundColor: scheme.onPrimary,
+      // Range picker — separate fields from the single-date one above.
+      rangePickerBackgroundColor: scheme.surface,
+      rangePickerSurfaceTintColor: Colors.transparent,
+      rangePickerHeaderBackgroundColor: scheme.primary,
+      rangePickerHeaderForegroundColor: scheme.onPrimary,
+      rangeSelectionBackgroundColor: scheme.primaryContainer,
+      rangePickerShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       dayForegroundColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
             ? scheme.onPrimary

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/screens/employee-screens/components/employee_screen_components/view_employee_detail.dart';
+import 'package:klockerapp/utils/custom_theme/k_palette.dart';
+import 'package:klockerapp/utils/widgets/k_filter_pills.dart';
 import 'package:klockerapp/utils/widgets/k_status_badge.dart';
 import 'package:provider/provider.dart';
 import '../../../../providers/user_provider.dart';
@@ -39,24 +41,63 @@ class _ViewEmployeeState extends State<ViewEmployee> {
     _fetchEmployees();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ==========================================
+  // Helpers
+  // ==========================================
+
+  void _showSnack(String message, {bool isError = false, int seconds = 4}) {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: isError
+              ? theme.textTheme.bodyMedium?.copyWith(color: scheme.onError)
+              : null,
+        ),
+        backgroundColor: isError ? scheme.error : null,
+        duration: Duration(seconds: seconds),
+      ),
+    );
+  }
+
+  /// First letter for the avatar. `name[0]` throws a RangeError on an empty
+  /// string, which a profile saved with a blank name produces.
+  static String _initial(dynamic name) {
+    final text = name?.toString().trim() ?? '';
+    return text.isEmpty ? 'U' : text[0].toUpperCase();
+  }
+
   Future<void> _fetchEmployees() async {
     setState(() => _isLoading = true);
     try {
       final data = await _service.getEmployees();
-      if (mounted) {
-        setState(() {
-          _allEmployees = data;
-          _applyFilters();
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _allEmployees = data;
+        // One setState instead of a setState nested inside a setState.
+        _filteredEmployees = _computeFiltered();
+      });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
       debugPrint("Error fetching employees: $e");
+      _showSnack("Couldn't load employees: $e", isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _applyFilters() {
+  /// Pure — works out the visible list without touching state, so callers
+  /// decide when to rebuild.
+  List<Map<String, dynamic>> _computeFiltered() {
     List<Map<String, dynamic>> results = _allEmployees;
 
     // 🚀 NEW: Cloak the Manager from Admins
@@ -81,16 +122,20 @@ class _ViewEmployeeState extends State<ViewEmployee> {
     }
 
     // 2. Filter by Search Text
-    if (_searchQuery.isNotEmpty) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
       results = results.where((user) {
-        final name = (user["full_name"] ?? "").toLowerCase();
-        return name.contains(_searchQuery.toLowerCase());
+        final name = (user["full_name"] ?? "").toString().toLowerCase();
+        final email = (user["email"] ?? "").toString().toLowerCase();
+        return name.contains(query) || email.contains(query);
       }).toList();
     }
 
-    setState(() {
-      _filteredEmployees = results;
-    });
+    return results;
+  }
+
+  void _applyFilters() {
+    setState(() => _filteredEmployees = _computeFiltered());
   }
 
   Future<void> _changeStatus(
@@ -113,7 +158,7 @@ class _ViewEmployeeState extends State<ViewEmployee> {
           if (index != -1) {
             _allEmployees[index]['approval_status'] = newStatus;
           }
-          _applyFilters();
+          _filteredEmployees = _computeFiltered();
         });
       }
 
@@ -138,31 +183,16 @@ class _ViewEmployeeState extends State<ViewEmployee> {
       // Don't claim an email was sent when it wasn't — sendApprovalEmail
       // returns false rather than throwing, so the old message was
       // unconditional.
-      final String message;
-      final Color colour;
-
       if (newStatus == 'approved') {
-        if (emailSent) {
-          message = 'Employee approved and notified by email.';
-          colour = const Color(0xFF00A36C);
-        } else {
-          message =
-              'Employee approved, but $emailProblem. '
-              'Let them know they can now sign in.';
-          colour = Colors.orange;
-        }
+        _showSnack(
+          emailSent
+              ? 'Employee approved and notified by email.'
+              : 'Employee approved, but $emailProblem. '
+                    'Let them know they can now sign in.',
+        );
       } else {
-        message = 'Employee rejected.';
-        colour = Colors.orange;
+        _showSnack('Employee rejected.');
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: colour,
-          duration: const Duration(seconds: 4),
-        ),
-      );
     } catch (e) {
       debugPrint('Status change error: $e');
       if (!mounted) return;
@@ -175,9 +205,6 @@ class _ViewEmployeeState extends State<ViewEmployee> {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
             title: const Text('Plan limit reached'),
             content: Text(friendly),
             actions: [
@@ -189,21 +216,19 @@ class _ViewEmployeeState extends State<ViewEmployee> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(friendly),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        _showSnack(friendly, isError: true, seconds: 5);
       }
     }
   }
 
+  // ==========================================
+  // Build
+  // ==========================================
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
     final userProvider = context.watch<UserProvider>();
     final canManageEmployees = userProvider.can('manage_employees');
 
@@ -212,269 +237,212 @@ class _ViewEmployeeState extends State<ViewEmployee> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SearchBar(
-                  controller: _searchController,
-                  onChanged: (value) {
-                    _searchQuery = value;
+          SearchBar(
+            controller: _searchController,
+            onChanged: (value) {
+              _searchQuery = value;
+              _applyFilters();
+            },
+            hintText: "Search name or email...",
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12.0, right: 8.0),
+              child: Icon(Icons.search),
+            ),
+            trailing: [
+              if (_searchQuery.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    _searchQuery = '';
                     _applyFilters();
                   },
-                  elevation: WidgetStateProperty.all(0),
-                  backgroundColor: WidgetStateProperty.all(
-                    isDark ? Colors.grey[900] : Colors.white,
-                  ),
-                  hintText: "Search employee name...",
-                  leading: const Padding(
-                    padding: EdgeInsets.only(left: 12.0, right: 8.0),
-                    child: Icon(Icons.search, color: Colors.grey),
-                  ),
-                  shape: WidgetStateProperty.all(
-                    RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                    ),
-                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
           const SeatUsageBanner(),
           const SizedBox(height: 16),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _filterOptions.map((filter) {
-                final isSelected = _statusFilter == filter;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: ChoiceChip(
-                    label: Text(filter),
-                    selected: isSelected,
-                    selectedColor: const Color(0xFF00A36C).withOpacity(0.2),
-                    labelStyle: TextStyle(
-                      color: isSelected ? const Color(0xFF00A36C) : Colors.grey,
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                    onSelected: (bool selected) {
-                      setState(() {
-                        _statusFilter = filter;
-                        _applyFilters();
-                      });
-                    },
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isSelected
-                            ? const Color(0xFF00A36C)
-                            : Colors.grey.withOpacity(0.3),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+
+          // Same pill row as the attendance and leave screens.
+          KFilterPills(
+            filters: _filterOptions,
+            selected: _statusFilter,
+            onSelected: (filter) {
+              _statusFilter = filter;
+              _applyFilters();
+            },
           ),
           const SizedBox(height: 16),
 
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF00A36C)),
-                  )
+                ? const Center(child: CircularProgressIndicator())
                 : _filteredEmployees.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      "No employees found.",
-                      style: TextStyle(color: Colors.grey),
+                      _searchQuery.trim().isNotEmpty || _statusFilter != 'All'
+                          ? "No employees match this filter."
+                          : "No employees found.",
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   )
                 : ListView.builder(
                     itemCount: _filteredEmployees.length,
-                    itemBuilder: (context, index) {
-                      final employee = _filteredEmployees[index];
-                      final String? avatarUrl = employee['avatar_url'];
-                      final String status =
-                          employee['approval_status'] ?? 'approved';
-
-                      // 🚀 UPGRADED: Bulletproof check for empty roles
-                      final String roleStr =
-                          employee['role']?.toString() ?? 'Employee';
-                      final bool isAdmin = roleStr.toLowerCase() == 'admin';
-
-                      // Safely checks if it is null OR just a blank string
-                      final dynamic customRoleId = employee['custom_role_id'];
-                      final bool hasNoCustomRole =
-                          customRoleId == null ||
-                          customRoleId.toString().trim().isEmpty;
-
-                      final bool needsPermissions = isAdmin && hasNoCustomRole;
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.grey[900]?.withOpacity(0.5)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.grey.withOpacity(0.1),
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: CircleAvatar(
-                            radius: 24,
-                            backgroundColor: const Color(
-                              0xFF00A36C,
-                            ).withOpacity(0.1),
-                            backgroundImage: avatarUrl != null
-                                ? NetworkImage(avatarUrl)
-                                : null,
-                            child: avatarUrl == null
-                                ? Text(
-                                    employee['full_name']?[0].toUpperCase() ??
-                                        'U',
-                                    style: const TextStyle(
-                                      color: Color(0xFF00A36C),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  employee['full_name'] ?? 'Unknown',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              KStatusBadge(status: status),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  employee['job_title'] ??
-                                      employee['role'] ??
-                                      'Employee',
-                                  style: TextStyle(
-                                    color: employee['job_title'] != null
-                                        ? const Color(0xFF00A36C)
-                                        : Colors.grey,
-                                    fontWeight: employee['job_title'] != null
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                if ((employee['email']?.toString().trim() ?? '')
-                                    .isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    employee['email'].toString(),
-                                    style: TextStyle(
-                                      color: Colors.grey.shade500,
-                                      fontSize: 12,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                                if (needsPermissions) ...[
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.warning_amber_rounded,
-                                          color: Colors.red,
-                                          size: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      const Text(
-                                        "Action Required: Assign Role",
-                                        style: TextStyle(
-                                          color: Colors.red,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          trailing: (status == 'pending' && canManageEmployees)
-                              ? Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                      ),
-                                      onPressed: () =>
-                                          _changeStatus(employee, 'approved'),
-                                      tooltip: "Approve",
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.cancel,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () =>
-                                          _changeStatus(employee, 'rejected'),
-                                      tooltip: "Reject",
-                                    ),
-                                  ],
-                                )
-                              : Icon(
-                                  Icons.chevron_right,
-                                  color: Colors.grey.withOpacity(0.5),
-                                ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    ViewEmployeeScreen(employee: employee),
-                              ),
-                            ).then((_) {
-                              _fetchEmployees();
-                            });
-                          },
-                        ),
-                      );
-                    },
+                    itemBuilder: (context, index) => _buildEmployeeTile(
+                      theme,
+                      _filteredEmployees[index],
+                      canManageEmployees,
+                    ),
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEmployeeTile(
+    ThemeData theme,
+    Map<String, dynamic> employee,
+    bool canManageEmployees,
+  ) {
+    final scheme = theme.colorScheme;
+
+    final String? avatarUrl = employee['avatar_url'];
+    final String status = employee['approval_status'] ?? 'approved';
+
+    // 🚀 UPGRADED: Bulletproof check for empty roles
+    final String roleStr = employee['role']?.toString() ?? 'Employee';
+    final bool isAdmin = roleStr.toLowerCase() == 'admin';
+
+    // Safely checks if it is null OR just a blank string
+    final dynamic customRoleId = employee['custom_role_id'];
+    final bool hasNoCustomRole =
+        customRoleId == null || customRoleId.toString().trim().isEmpty;
+
+    final bool needsPermissions = isAdmin && hasNoCustomRole;
+
+    final String? jobTitle = employee['job_title']?.toString();
+    final String email = (employee['email']?.toString().trim() ?? '');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: CircleAvatar(
+          radius: 24,
+          backgroundColor: scheme.primaryContainer,
+          backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+          child: avatarUrl == null
+              ? Text(
+                  _initial(employee['full_name']),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: scheme.onPrimaryContainer,
+                  ),
+                )
+              : null,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                employee['full_name'] ?? 'Unknown',
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            KStatusBadge(status: status),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                jobTitle ?? employee['role'] ?? 'Employee',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: jobTitle != null
+                      ? context.brandText
+                      : scheme.onSurfaceVariant,
+                  fontWeight: jobTitle != null
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                ),
+              ),
+              if (email.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  email,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              if (needsPermissions) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        Icons.warning_amber_rounded,
+                        color: scheme.onErrorContainer,
+                        size: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        "Action required: assign a role",
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.error,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        trailing: (status == 'pending' && canManageEmployees)
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.check_circle, color: context.brandText),
+                    onPressed: () => _changeStatus(employee, 'approved'),
+                    tooltip: "Approve",
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.cancel, color: scheme.error),
+                    onPressed: () => _changeStatus(employee, 'rejected'),
+                    tooltip: "Reject",
+                  ),
+                ],
+              )
+            : Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ViewEmployeeScreen(employee: employee),
+            ),
+          ).then((_) {
+            if (mounted) _fetchEmployees();
+          });
+        },
       ),
     );
   }

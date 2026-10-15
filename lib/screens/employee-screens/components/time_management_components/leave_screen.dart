@@ -1,48 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart'; // 🚀 Added for Permissions
-import 'package:klockerapp/providers/user_provider.dart'; // 🚀 Added for Permissions
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
-import 'package:klockerapp/screens/employee-screens/components/time_management_components/custom_date_picker.dart';
 import 'package:klockerapp/utils/custom_theme/k_palette.dart';
-import 'leave_settings_screen.dart'; // 🚀 IMPORT SETTINGS SCREEN
 
 class LeaveScreen extends StatefulWidget {
   const LeaveScreen({super.key});
 
   @override
-  State<LeaveScreen> createState() => _LeaveScreenState();
+  State<LeaveScreen> createState() => _LeaveRequestScreenState();
 }
 
-class _LeaveScreenState extends State<LeaveScreen> {
-  bool _isLoading = true;
-  List<Map<String, dynamic>> _allRequests = [];
+class _LeaveRequestScreenState extends State<LeaveScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _reasonController = TextEditingController();
 
-  // --- Track the date AND if the filter is active ---
-  DateTime _selectedDate = DateTime.now();
-  bool _isDateFilterActive = false;
+  bool _isInitLoading = true;
+  bool _isSubmitting = false;
 
-  // The active pill filter
-  String _selectedFilter = 'Pending';
-  final List<String> _filters = ['Pending', 'Approved', 'Rejected', 'All'];
+  String? _selectedLeaveType;
+  DateTimeRange? _selectedDateRange;
 
-  // The search bar was previously decorative — no controller, no handler.
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  // 🚀 Stores policy parameters fetched from Supabase
+  List<Map<String, dynamic>> _allowanceOptions = [];
 
   @override
   void initState() {
     super.initState();
-    _fetchRequests();
+    _loadPolicyAllowances();
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _reasonController.dispose();
     super.dispose();
   }
 
+  // ==========================================
+  // Helpers
+  // ==========================================
+
   void _showSnack(String message, {bool isError = false}) {
+    if (!mounted) return;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -59,475 +57,302 @@ class _LeaveScreenState extends State<LeaveScreen> {
     );
   }
 
-  Future<void> _fetchRequests() async {
-    setState(() => _isLoading = true);
+  static double _num(dynamic v) => double.tryParse(v?.toString() ?? '0') ?? 0.0;
+
+  Future<void> _loadPolicyAllowances() async {
     try {
-      // Fetches EVERYTHING
-      final requests = await SupabaseService().getAllCompanyLeaveRequests();
-      if (mounted) setState(() => _allRequests = requests);
+      final allowances = await SupabaseService().getEmployeeLeaveAllowances();
+      if (!mounted) return;
+      setState(() {
+        _allowanceOptions = allowances;
+        if (allowances.isNotEmpty) {
+          _selectedLeaveType = allowances.first['leave_type']?.toString();
+        }
+      });
     } catch (e) {
-      if (mounted) _showSnack("Error: $e", isError: true);
+      _showSnack("Error loading policies: $e", isError: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isInitLoading = false);
     }
   }
 
-  Future<void> _handleDecision(String requestId, String decision) async {
-    // Captured up front: after the dialog is popped, looking these up off
-    // `context` is a race against the widget still being mounted.
-    final navigator = Navigator.of(context);
+  /// Quick utility to pull the current active selection's map data.
+  ///
+  /// This used to `firstWhere(..., orElse: () => {})`, which handed back an
+  /// EMPTY map rather than null — so the `!= null` checks below passed and
+  /// then `allowance['entitled_days'] as num` threw on the missing key.
+  Map<String, dynamic>? get _currentSelectedAllowance {
+    if (_selectedLeaveType == null) return null;
+    for (final option in _allowanceOptions) {
+      if (option['leave_type']?.toString() == _selectedLeaveType) {
+        return option;
+      }
+    }
+    return null;
+  }
 
-    showDialog(
+  /// Calendar days between the two dates, inclusive of both ends.
+  ///
+  /// NOTE: this counts weekends. If your leave policy deducts working days
+  /// only, this number and `remaining_days` are measuring different things.
+  int get _requestedDaysCount {
+    if (_selectedDateRange == null) return 0;
+    return _selectedDateRange!.end
+            .difference(_selectedDateRange!.start)
+            .inDays +
+        1;
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+      firstDate: now,
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: _selectedDateRange,
+      saveText: 'CONFIRM',
+      // No `builder:` override. The old one forced a green app bar and
+      // replaced colorScheme.surface with the scaffold background, which
+      // rendered the picker unusable in dark mode. datePickerTheme in
+      // k_theme.dart covers this — see the range fields noted in chat.
     );
 
+    if (picked == null || !mounted) return;
+    setState(() => _selectedDateRange = picked);
+  }
+
+  Future<void> _submitRequest() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedDateRange == null) {
+      _showSnack("Please select the dates you need off.", isError: true);
+      return;
+    }
+    if (_selectedLeaveType == null) {
+      _showSnack("Please choose a leave type.", isError: true);
+      return;
+    }
+
+    // 🚀 POLICY ENFORCEMENT CHECK: Prevent overflow request values
+    final currentAlloc = _currentSelectedAllowance;
+    if (currentAlloc != null) {
+      final double remaining = _num(currentAlloc['remaining_days']);
+      if (_requestedDaysCount > remaining) {
+        _showSnack(
+          "Insufficient balance. You requested $_requestedDaysCount days "
+          "but only have ${remaining.toStringAsFixed(0)} left.",
+          isError: true,
+        );
+        return;
+      }
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final navigator = Navigator.of(context);
+
     try {
-      await SupabaseService().updateLeaveStatus(requestId, decision);
+      await SupabaseService().submitLeaveRequest(
+        startDate: _selectedDateRange!.start,
+        endDate: _selectedDateRange!.end,
+        leaveType: _selectedLeaveType!,
+        reason: _reasonController.text.trim(),
+      );
 
-      navigator.pop(); // Close loading dialog
       if (!mounted) return;
-
-      _showSnack("Request $decision.");
-      _fetchRequests(); // Refresh the list
-    } catch (e) {
+      _showSnack("Leave request submitted.");
       navigator.pop();
+    } catch (e) {
       if (!mounted) return;
+      // Only reset here — on success this screen is already gone.
+      setState(() => _isSubmitting = false);
       _showSnack("Error: $e", isError: true);
     }
   }
 
-  // --- 🚀 DUAL-FILTERING ENGINE ---
-  List<Map<String, dynamic>> get _filteredRequests {
-    final query = _searchQuery.trim().toLowerCase();
-
-    return _allRequests.where((req) {
-      // 1. Status Check
-      bool matchesStatus =
-          _selectedFilter == 'All' ||
-          (req['status'] ?? '').toString().toLowerCase() ==
-              _selectedFilter.toLowerCase();
-
-      // 2. Date Check (Only applies if they explicitly picked a date)
-      bool matchesDate = true;
-      if (_isDateFilterActive &&
-          req['start_date'] != null &&
-          req['end_date'] != null) {
-        // Strip times to compare pure calendar days
-        DateTime target = DateTime(
-          _selectedDate.year,
-          _selectedDate.month,
-          _selectedDate.day,
-        );
-        DateTime start = DateTime.parse(req['start_date']);
-        DateTime end = DateTime.parse(req['end_date']);
-
-        DateTime cleanStart = DateTime(start.year, start.month, start.day);
-        DateTime cleanEnd = DateTime(end.year, end.month, end.day);
-
-        // Does the target date fall on or between the start and end dates?
-        matchesDate = !target.isBefore(cleanStart) && !target.isAfter(cleanEnd);
-      }
-
-      // 3. Text Check (employee name or leave type)
-      bool matchesQuery = true;
-      if (query.isNotEmpty) {
-        final name = (req['profiles']?['full_name'] ?? '')
-            .toString()
-            .toLowerCase();
-        final type = (req['leave_type'] ?? '').toString().toLowerCase();
-        matchesQuery = name.contains(query) || type.contains(query);
-      }
-
-      return matchesStatus && matchesDate && matchesQuery;
-    }).toList();
-  }
+  // ==========================================
+  // Build
+  // ==========================================
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-
-    // 🚀 CHECK PERMISSION FOR LEAVE POLICIES
-    final userProvider = context.watch<UserProvider>();
-    final canManagePolicies = userProvider.can('manage_leave_policies');
-
-    // Computed once — the getter walks the whole list, and the old code
-    // called it twice per build.
-    final requests = _filteredRequests;
+    final activeAlloc = _currentSelectedAllowance;
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 1. TOP DATE PICKER & SETTINGS ICON
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-              child: Row(
+      appBar: AppBar(title: const Text("Request Time Off")),
+      body: _isInitLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _allowanceOptions.isEmpty
+          ? _buildNoPoliciesState(theme)
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(24),
                 children: [
-                  // 🚀 FIXED: Standard Expanded to lock DatePicker firmly in place
-                  Expanded(
-                    child: CustomDatePicker(
-                      initialDate: _selectedDate,
-                      onDateSelected: (newDate) {
-                        setState(() {
-                          _selectedDate = newDate;
-                          _isDateFilterActive = true;
-                        });
-                      },
-                    ),
+                  // --- 1. DYNAMIC LEAVE TYPE DROPDOWN ---
+                  _sectionLabel(theme, "Leave Type"),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: _selectedLeaveType,
+                    isExpanded: true,
+                    dropdownColor: scheme.surface,
+                    items: _allowanceOptions
+                        .map(
+                          (opt) => DropdownMenuItem<String>(
+                            value: opt['leave_type'].toString(),
+                            child: Text(opt['leave_type'].toString()),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => _selectedLeaveType = value),
                   ),
+                  const SizedBox(height: 20),
 
-                  if (_isDateFilterActive) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: scheme.errorContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        tooltip: "Clear date filter",
-                        icon: Icon(
-                          Icons.close_rounded,
-                          color: scheme.onErrorContainer,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _isDateFilterActive = false;
-                            _selectedDate = DateTime.now();
-                          });
-                        },
-                      ),
-                    ),
+                  // --- 🚀 NEW: DYNAMIC BALANCE VISUAL PREVIEW CARD ---
+                  if (activeAlloc != null) ...[
+                    _buildBalanceCard(theme, activeAlloc),
+                    const SizedBox(height: 24),
                   ],
 
-                  // 🚀 HIDE SETTINGS IF THEY DON'T HAVE PERMISSION
-                  if (canManagePolicies) ...[
-                    const SizedBox(width: 8),
-                    // 🚀 FIXED OVERFLOW: The Settings Button
-                    InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const LeaveSettingsScreen(),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        // 🚀 MAGIC FIX: mainAxisSize limits the row to strictly what it needs
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.settings,
-                              color: scheme.onPrimaryContainer,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              "Settings",
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: scheme.onPrimaryContainer,
+                  // --- 2. DATE RANGE PICKER ---
+                  _sectionLabel(theme, "Dates Requested"),
+                  const SizedBox(height: 8),
+                  _buildDateField(theme),
+                  const SizedBox(height: 24),
+
+                  // --- 3. REASON TEXT BOX ---
+                  _sectionLabel(theme, "Reason (Optional)"),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _reasonController,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: "Briefly explain why you need this time off...",
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // --- 4. SUBMIT BUTTON ---
+                  SizedBox(
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitRequest,
+                      child: _isSubmitting
+                          ? SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.onPrimary,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // 2. SEARCH BAR
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SearchBar(
-                      controller: _searchController,
-                      hintText: "Search requests...",
-                      leading: const Icon(Icons.search, size: 20),
-                      trailing: [
-                        if (_searchQuery.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          ),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _searchQuery = value),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.filter_list_outlined,
-                      color: scheme.onPrimaryContainer,
+                            )
+                          : const Text("Submit Request"),
                     ),
                   ),
                 ],
               ),
             ),
+    );
+  }
 
-            // 3. THE SLEEK PILL FILTERS
-            SizedBox(
-              height: 50,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _filters.length,
-                itemBuilder: (context, index) {
-                  final filter = _filters[index];
-                  final isSelected = _selectedFilter == filter;
+  Widget _sectionLabel(ThemeData theme, String text) =>
+      Text(text, style: theme.textTheme.titleMedium);
 
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedFilter = filter),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.only(
-                        right: 10,
-                        top: 5,
-                        bottom: 5,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSelected ? scheme.primary : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isSelected ? scheme.primary : scheme.outline,
-                        ),
-                      ),
-                      child: Text(
-                        filter,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: isSelected
-                              ? scheme.onPrimary
-                              : scheme.onSurfaceVariant,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
+  Widget _buildBalanceCard(ThemeData theme, Map<String, dynamic> alloc) {
+    final scheme = theme.colorScheme;
 
-            // 4. DYNAMIC REQUESTS LIST
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : RefreshIndicator(
-                      onRefresh: _fetchRequests,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          if (requests.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 40),
-                              child: Center(
-                                child: Text(
-                                  _emptyMessage(),
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyLarge?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          ...requests.map((req) {
-                            final startDate = DateTime.parse(req['start_date']);
-                            final endDate = DateTime.parse(req['end_date']);
-
-                            return _buildManagerActionCard(
-                              requestId: req['id'],
-                              name:
-                                  req['profiles']?['full_name'] ??
-                                  'Unknown Employee',
-                              type: req['leave_type'] ?? 'Leave',
-                              days: "${req['total_days']} Days",
-                              date:
-                                  "${DateFormat('MMM dd').format(startDate)} - ${DateFormat('MMM dd, yyyy').format(endDate)}",
-                              status: req['status'] ?? 'pending',
-                              // 🚀 Pulls the real avatar, or leaves it null if they don't have one
-                              imageUrl: req['profiles']?['avatar_url'],
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outline),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildMetricItem(
+            theme,
+            "Entitled",
+            "${_num(alloc['entitled_days']).toStringAsFixed(0)} d",
+            scheme.onSurface,
+          ),
+          _buildMetricItem(
+            theme,
+            "Used",
+            "${_num(alloc['used_days']).toStringAsFixed(0)} d",
+            context.status.pendingFg,
+          ),
+          _buildMetricItem(
+            theme,
+            "Available",
+            "${_num(alloc['remaining_days']).toStringAsFixed(0)} d",
+            context.brandText,
+            isBoldMetric: true,
+          ),
+        ],
       ),
     );
   }
 
-  String _emptyMessage() {
-    final status = _selectedFilter.toLowerCase();
-    if (_searchQuery.trim().isNotEmpty) {
-      return "No $status requests match \"${_searchQuery.trim()}\".";
-    }
-    if (_isDateFilterActive) {
-      return "No $status requests on this date.";
-    }
-    return "No $status requests.";
-  }
-
-  // --- SMART FOOTER WIDGET ---
-  Widget _buildManagerActionCard({
-    required String requestId,
-    required String name,
-    required String type,
-    required String days,
-    required String date,
-    required String status,
-    String? imageUrl, // 🚀 Made this nullable (String?)
-  }) {
-    final theme = Theme.of(context);
+  Widget _buildDateField(ThemeData theme) {
     final scheme = theme.colorScheme;
-    final isPending = status.toLowerCase() == 'pending';
+    final hasRange = _selectedDateRange != null;
 
-    // One lookup instead of an isApproved ternary on every colour below —
-    // and it covers statuses beyond approved/rejected if any ever appear.
-    final (statusBg, statusFg) = context.status.forStatus(status);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
+    return InkWell(
+      onTap: _pickDateRange,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border.all(color: scheme.outline),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
           children: [
-            Row(
-              children: [
-                // 🚀 DYNAMIC AVATAR LOGIC
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: scheme.primaryContainer,
-                  backgroundImage: imageUrl != null
-                      ? NetworkImage(imageUrl)
-                      : null,
-                  child: imageUrl == null
-                      ? Icon(Icons.person, color: scheme.onPrimaryContainer)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: theme.textTheme.titleMedium),
-                      Text(
-                        type,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+            Icon(Icons.calendar_month, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hasRange
+                        ? "${DateFormat('MMM dd').format(_selectedDateRange!.start)}  -  ${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.end)}"
+                        : "Tap to select dates",
+                    style: hasRange
+                        ? theme.textTheme.titleSmall
+                        : theme.textTheme.bodyLarge?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                  ),
+                  if (hasRange) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      "Total request: $_requestedDaysCount days",
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: context.brandText,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
-                ),
-                Text(
-                  days,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: context.brandText,
-                  ),
-                ),
-              ],
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 14,
+            if (hasRange)
+              IconButton(
+                tooltip: "Clear dates",
+                icon: Icon(
+                  Icons.close,
+                  size: 18,
                   color: scheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 5),
-                Text(
-                  date,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Divider(height: 1),
-            ),
-
-            if (isPending)
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => _handleDecision(requestId, 'rejected'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: scheme.error,
-                      ),
-                      child: const Text("Reject"),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _handleDecision(requestId, 'approved'),
-                      child: const Text("Approve"),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: statusBg,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      status.toLowerCase() == 'approved'
-                          ? Icons.check_circle
-                          : Icons.cancel,
-                      color: statusFg,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _statusLabel(status),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: statusFg,
-                      ),
-                    ),
-                  ],
-                ),
+                onPressed: () => setState(() => _selectedDateRange = null),
               ),
           ],
         ),
@@ -535,8 +360,68 @@ class _LeaveScreenState extends State<LeaveScreen> {
     );
   }
 
-  String _statusLabel(String status) {
-    if (status.isEmpty) return 'Unknown';
-    return status[0].toUpperCase() + status.substring(1).toLowerCase();
+  Widget _buildMetricItem(
+    ThemeData theme,
+    String title,
+    String data,
+    Color displayColor, {
+    bool isBoldMetric = false,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          data,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontSize: 18,
+            fontWeight: isBoldMetric ? FontWeight.w900 : FontWeight.bold,
+            color: displayColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoPoliciesState(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              size: 64,
+              color: context.status.pendingFg,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "No Leave Policy Set",
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Your company hasn't set up leave allocation rules yet. "
+              "Ask a workspace admin to add leave types before requesting time off.",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,9 +9,12 @@ import 'package:klockerapp/providers/user_provider.dart';
 
 class Inbox extends StatefulWidget {
   final String? roomId;
-  final String recipientName;
 
-  const Inbox({super.key, this.roomId, required this.recipientName});
+  /// Nullable so the split view can mount this with no conversation picked
+  /// yet. On mobile it's always supplied by the route.
+  final String? recipientName;
+
+  const Inbox({super.key, this.roomId, this.recipientName});
 
   @override
   State<Inbox> createState() => _InboxState();
@@ -28,14 +33,36 @@ class _InboxState extends State<Inbox> {
   int _lastMessageCount = 0;
 
   static const _emptyChatMessage = "No messages yet. Say hi! 👋";
+  static const _noRoomMessage = "Select a conversation to start chatting";
 
   @override
   void initState() {
     super.initState();
-    if (widget.roomId != null) {
-      SupabaseService().markMessagesAsRead(widget.roomId!);
-      _messagesStream = SupabaseService().getLiveMessagesStream(widget.roomId!);
+    _openRoom(widget.roomId);
+  }
+
+  /// In the split view this widget is never rebuilt from scratch — the same
+  /// instance just gets a new roomId when another conversation is tapped.
+  /// Without this the right pane would stay stuck on the first chat opened.
+  @override
+  void didUpdateWidget(covariant Inbox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.roomId != oldWidget.roomId) {
+      // A half-typed message belongs to the person you were talking to, not
+      // the one you just switched to.
+      _messageController.clear();
+      setState(() {
+        _lastMessageCount = 0;
+        _messagesStream = null;
+        _openRoom(widget.roomId);
+      });
     }
+  }
+
+  void _openRoom(String? roomId) {
+    if (roomId == null) return;
+    SupabaseService().markMessagesAsRead(roomId);
+    _messagesStream = SupabaseService().getLiveMessagesStream(roomId);
   }
 
   @override
@@ -110,36 +137,61 @@ class _InboxState extends State<Inbox> {
     final scheme = theme.colorScheme;
     final chatReady = context.watch<UserProvider>().isChatReady; // 🚀 new
 
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.recipientName), centerTitle: false),
-      body:
-          !chatReady // 🚀 new — replaces the whole body while chat isn't ready
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Setting up secure chat…',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+    final Widget body;
+
+    if (!chatReady) {
+      // 🚀 new — replaces the whole body while chat isn't ready
+      body = Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'Setting up secure chat…',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
               ),
-            )
-          : Column(
-              children: [
-                Expanded(child: _buildMessageList(theme)),
-                _buildComposer(theme),
-              ],
             ),
+          ],
+        ),
+      );
+    } else if (widget.roomId == null) {
+      // The split view's resting state, before a conversation is picked.
+      body = Center(
+        child: Text(
+          _noRoomMessage,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    } else {
+      body = Column(
+        children: [
+          Expanded(child: _buildMessageList(theme)),
+          _buildComposer(theme),
+        ],
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.recipientName ?? 'Chat'),
+        centerTitle: false,
+      ),
+      // Stops bubbles stretching the full width of a desktop monitor.
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: body,
+        ),
+      ),
     );
   }
 
   Widget _buildMessageList(ThemeData theme) {
-    if (widget.roomId == null || _messagesStream == null) {
+    if (_messagesStream == null) {
       return _buildEmptyState(theme);
     }
 
@@ -211,7 +263,9 @@ class _InboxState extends State<Inbox> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
+          // 75% of the screen is right on a phone, but in the split view the
+          // screen is the whole window — so cap it too.
+          maxWidth: math.min(MediaQuery.of(context).size.width * 0.75, 480),
         ),
         decoration: BoxDecoration(
           color: bubbleColor,

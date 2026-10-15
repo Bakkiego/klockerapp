@@ -33,7 +33,7 @@ class TimeManagement extends StatelessWidget {
 
     if (userProvider.can('manage_leave_requests')) {
       myTabs.add(const Tab(text: "Approve Leave"));
-      myScreens.add(const LeaveScreen());
+      myScreens.add(LeaveScreen());
     }
 
     // 🚀 THE FIX: If they have NO permissions, show an empty state instead of crashing
