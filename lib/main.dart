@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:klockerapp/supabase/google_calendar_service.dart';
 import 'package:klockerapp/screens/pending_approval_screen.dart';
+import 'package:klockerapp/screens/subscription_locked_screen.dart';
 // import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // 🚀 Required for detecting platform and launching URLs
@@ -80,6 +81,16 @@ class _AuthGateState extends State<AuthGate> {
   userRole? _role;
   String? _approvalStatus;
 
+  // 🚀 Subscription gate. This is the path EVERY returning user takes —
+  // Supabase restores the session on launch, so the login screen is never
+  // built for them and any check living there can't gate anything.
+  bool _tenantActive = true;
+  Map<String, dynamic>? _billingState;
+
+  // Set when the profile load itself failed, so we can tell "couldn't
+  // reach the server" apart from "you're not allowed in".
+  bool _loadFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,35 +104,70 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _loadProfileData() async {
     try {
       final data = await SupabaseService().getUserProfile(widget.userId);
-      if (mounted) {
-        context.read<UserProvider>().setUserProfile(data);
 
-        // Fetch and set permissions silently on app start
-        final String legacyRole = data['role'] ?? 'employee';
-        final String? customRoleId = data['custom_role_id'];
+      // Check billing before doing any more work. A lapsed tenant's other
+      // reads are refused by RLS anyway, so loading permissions and tenant
+      // settings would just produce noise in the logs.
+      final billing = await SupabaseService().getBillingState();
+      final isActive = billing?['is_active'] == true;
 
-        final permissions = await SupabaseService().getUserPermissions(
-          customRoleId,
-          legacyRole,
-        );
-        context.read<UserProvider>().setPermissions(permissions);
+      if (!mounted) return;
 
-        final tenantSettings = await SupabaseService().getTenantSettings();
-        if (tenantSettings?['currency'] != null) {
-          context.read<UserProvider>().setCurrencyFromCode(
-            tenantSettings!['currency'],
-          );
-        }
-
+      if (!isActive) {
         setState(() {
-          _role = userRole.fromString(legacyRole);
+          _billingState = billing;
+          _tenantActive = false;
           _approvalStatus = data['approval_status'] ?? 'approved';
           _isLoading = false;
         });
+        return;
       }
+
+      context.read<UserProvider>().setUserProfile(data);
+
+      // Fetch and set permissions silently on app start
+      final String legacyRole = data['role'] ?? 'employee';
+      final String? customRoleId = data['custom_role_id'];
+
+      final permissions = await SupabaseService().getUserPermissions(
+        customRoleId,
+        legacyRole,
+      );
+      if (!mounted) return;
+      context.read<UserProvider>().setPermissions(permissions);
+
+      final tenantSettings = await SupabaseService().getTenantSettings();
+      if (!mounted) return;
+      if (tenantSettings?['currency'] != null) {
+        context.read<UserProvider>().setCurrencyFromCode(
+          tenantSettings!['currency'],
+        );
+      }
+
+      setState(() {
+        _role = userRole.fromString(legacyRole);
+        _approvalStatus = data['approval_status'] ?? 'approved';
+        _tenantActive = true;
+        _isLoading = false;
+      });
+    } on PostgrestException catch (e) {
+      // See isTenantActive() — if the RPC isn't deployed yet, don't lock
+      // the whole customer base out.
+      debugPrint("AuthGate Error: ${e.code} ${e.message}");
+      if (!mounted) return;
+      setState(() {
+        _loadFailed = true;
+        _tenantActive = e.code == 'PGRST202' || e.code == '42883';
+        _isLoading = false;
+      });
     } catch (e) {
       debugPrint("AuthGate Error: $e");
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _loadFailed = true;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -132,10 +178,6 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     // The Security Locks
-    if (_approvalStatus == 'pending') {
-      return const PendingApprovalScreen();
-    }
-
     if (_approvalStatus == 'rejected') {
       // Safely force a sign-out in the background and boot them to Login
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -144,10 +186,24 @@ class _AuthGateState extends State<AuthGate> {
       return const LoginScreen();
     }
 
+    if (_approvalStatus == 'pending') {
+      return const PendingApprovalScreen();
+    }
+
+    // 🚀 Subscription gate. Nothing is deleted — this screen re-checks and
+    // lets them back in as soon as the payment lands.
+    if (!_tenantActive) {
+      return SubscriptionLockedScreen(billingState: _billingState);
+    }
+
     // ✅ Normal flow for approved users
     if (_role != null) {
       return BottomNav(role: _role!);
     }
+
+    // Load failed and we never got a role — send them back to sign in
+    // rather than sitting on a blank screen.
+    if (_loadFailed) return const LoginScreen();
 
     return const LoginScreen();
   }
@@ -245,7 +301,7 @@ class MobileAppWall extends StatelessWidget {
                 Text(
                   topText,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.surface.withOpacity(0.7),
+                    color: Color.lerp(scheme.surface, scheme.onSurface, 0.3),
                   ),
                 ),
                 Text(

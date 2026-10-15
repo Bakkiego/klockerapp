@@ -367,6 +367,39 @@ class SupabaseService {
     return data;
   }
 
+  Future<Map<String, dynamic>?> getBillingState() async {
+    final result = await _supabase.rpc('my_billing_state');
+    if (result == null) return null;
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<bool> isTenantActive() async {
+    try {
+      final state = await getBillingState();
+      return state?['is_active'] == true;
+    } on PostgrestException catch (e) {
+      // Migration guard: if the RPC doesn't exist yet, the app build has
+      // reached users before subscription_gate.sql was run. Failing closed
+      // here would lock out every paying customer at once, so this one
+      // case fails open and shouts in the log instead.
+      //
+      // PGRST202 = "function not found in schema cache"; 42883 is the
+      // underlying Postgres "undefined function".
+      if (e.code == 'PGRST202' || e.code == '42883') {
+        debugPrint(
+          'my_billing_state() is missing — run subscription_gate.sql. '
+          'Subscription gate is NOT being enforced.',
+        );
+        return true;
+      }
+      debugPrint('Billing state check failed: ${e.code} ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('Billing state check failed: $e');
+      return false;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getEmployees() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
@@ -393,14 +426,15 @@ class SupabaseService {
   }
 
   // 1. Verify the Company Code
+  // 1. Verify the Company Code
   Future<Map<String, dynamic>?> verifyCompanyCode(String code) async {
-    final response = await _supabase
-        .from('tenants')
-        .select('id, name')
-        .eq('company_code', code)
-        .maybeSingle();
+    final response = await _supabase.rpc(
+      'lookup_tenant_by_code',
+      params: {'code': code},
+    );
 
-    return response;
+    if (response == null) return null;
+    return Map<String, dynamic>.from(response as Map);
   }
 
   // 2. Sign Up the Employee
