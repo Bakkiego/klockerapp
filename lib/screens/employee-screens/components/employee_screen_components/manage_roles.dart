@@ -1,5 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:klockerapp/providers/user_provider.dart';
 import '../../../../supabase/repo/supabase_service.dart';
+
+/// What the tenant's plan allows, in the shape this screen needs.
+class _PlanView {
+  /// null (or empty) means the plan never loaded. Treated as "allow
+  /// everything" — a failed RPC must not grey out the whole editor.
+  final Set<String>? actions;
+
+  /// Display label for the current tier.
+  final String tier;
+
+  /// action_name -> lowest tier that includes it, from plan_action_tiers().
+  final Map<String, String> actionTiers;
+
+  const _PlanView({
+    required this.actions,
+    required this.tier,
+    required this.actionTiers,
+  });
+
+  bool get known => actions != null && actions!.isNotEmpty;
+
+  bool allows(String action) => known ? actions!.contains(action) : true;
+
+  /// The tier they'd need. Null when nothing is known about this action —
+  /// either plan_action_tiers() failed, or the action has no
+  /// feature_permissions row yet. Either way the row stays enabled.
+  String? requiredTier(String action) => actionTiers[action];
+}
 
 class ManageRolesScreen extends StatefulWidget {
   const ManageRolesScreen({super.key});
@@ -11,9 +41,17 @@ class ManageRolesScreen extends StatefulWidget {
 class _ManageRolesScreenState extends State<ManageRolesScreen> {
   final SupabaseService _service = SupabaseService();
 
+  static const Map<String, int> _tierRank = {
+    'lite': 1,
+    'basic': 2,
+    'standard': 3,
+    'premium': 4,
+  };
+
   bool _isLoading = true;
   List<Map<String, dynamic>> _roles = [];
   List<Map<String, dynamic>> _allPermissions = [];
+  Map<String, String> _actionTiers = {};
 
   // 🚀 FIXED: We now use a strict flag to keep the editor open!
   bool _isEditing = false;
@@ -63,16 +101,26 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
   List<dynamic> _permsOf(Map<String, dynamic> role) =>
       (role['role_permissions'] as List?) ?? const [];
 
+  String _actionOf(Map<String, dynamic> perm) =>
+      perm['action_name']?.toString() ?? '';
+
+  /// my_plan_tier() falls back to '__default__' on an unrecognised
+  /// subscription_tier. The permissions are right (same set as Lite) but
+  /// the label isn't something to show a customer.
+  String _displayTier(String tier) => tier == '__default__' ? 'Lite' : tier;
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
       final perms = await _service.getAvailableAppPermissions();
       final roles = await _service.getTenantRoles();
+      final tiers = await _service.getPlanActionTiers();
 
       if (mounted) {
         setState(() {
           _allPermissions = perms;
           _roles = roles;
+          _actionTiers = tiers;
         });
       }
     } catch (e) {
@@ -121,6 +169,10 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
 
     setState(() => _isSaving = true);
     try {
+      // _selectedPermissionIds deliberately still contains any off-plan
+      // permissions the role already had. They're inert at runtime (login
+      // intersects role grants with my_plan_actions) but saving them keeps
+      // the role intact through a downgrade/upgrade cycle.
       await _service.saveRoleWithPermissions(
         roleId: _selectedRole?['id'],
         roleName: name, // was the raw, untrimmed field value
@@ -188,6 +240,13 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final user = context.watch<UserProvider>();
+
+    final plan = _PlanView(
+      actions: user.planActions,
+      tier: _displayTier(user.planTier),
+      actionTiers: _actionTiers,
+    );
 
     if (_isLoading && _roles.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -199,7 +258,7 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
 
         // If Mobile, and a role is selected, show ONLY the editor (full screen)
         if (!isWeb && _isEditing) {
-          return _buildEditorPanel(isWeb);
+          return _buildEditorPanel(isWeb, plan);
         }
 
         return Row(
@@ -255,7 +314,7 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
               Expanded(
                 flex: 2,
                 child: _isEditing
-                    ? _buildEditorPanel(isWeb)
+                    ? _buildEditorPanel(isWeb, plan)
                     : Center(
                         child: Text(
                           "Select a role or create a new one.",
@@ -312,7 +371,7 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
   }
 
   // THE EDITOR UI
-  Widget _buildEditorPanel(bool isWeb) {
+  Widget _buildEditorPanel(bool isWeb, _PlanView plan) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -323,6 +382,8 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
       final module = p['module']?.toString() ?? 'other';
       groupedPerms.putIfAbsent(module, () => []).add(p);
     }
+
+    final hasLocked = _allPermissions.any((p) => !plan.allows(_actionOf(p)));
 
     return Column(
       children: [
@@ -360,6 +421,8 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
               ),
               const SizedBox(height: 32),
 
+              if (hasLocked) _buildPlanBanner(theme, plan),
+
               Text(
                 "Assign Permissions",
                 style: theme.textTheme.titleSmall?.copyWith(
@@ -381,7 +444,8 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
 
               // The grouped toggle switches
               ...groupedPerms.entries.map(
-                (entry) => _buildModuleCard(theme, entry.key, entry.value),
+                (entry) =>
+                    _buildModuleCard(theme, entry.key, entry.value, plan),
               ),
             ],
           ),
@@ -429,57 +493,203 @@ class _ManageRolesScreenState extends State<ManageRolesScreen> {
     );
   }
 
+  Widget _buildPlanBanner(ThemeData theme, _PlanView plan) {
+    final scheme = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.workspace_premium_outlined,
+            size: 20,
+            color: scheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "You're on the ${plan.tier} plan",
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Greyed-out permissions belong to a higher plan. Anything "
+                  "already assigned to a role stays saved and switches back "
+                  "on by itself if you upgrade.",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tierBadge(ThemeData theme, String label, {bool emphasised = false}) {
+    final scheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: emphasised ? scheme.primaryContainer : scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: emphasised
+              ? scheme.onPrimaryContainer
+              : scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  /// Lowest tier across a set of locked permissions — what the module
+  /// header advertises.
+  String? _lowestTierFor(List<Map<String, dynamic>> perms, _PlanView plan) {
+    String? best;
+    int bestRank = 99;
+    for (final p in perms) {
+      final tier = plan.requiredTier(_actionOf(p));
+      if (tier == null) continue;
+      final rank = _tierRank[tier.toLowerCase()] ?? 99;
+      if (rank < bestRank) {
+        bestRank = rank;
+        best = tier;
+      }
+    }
+    return best;
+  }
+
   Widget _buildModuleCard(
     ThemeData theme,
     String module,
     List<Map<String, dynamic>> perms,
+    _PlanView plan,
   ) {
     final scheme = theme.colorScheme;
+
+    final locked = perms.where((p) => !plan.allows(_actionOf(p))).toList();
+    final allLocked = perms.isNotEmpty && locked.length == perms.length;
+    final moduleTier = allLocked ? _lowestTierFor(locked, plan) : null;
+
+    final headerColor = allLocked ? scheme.onSurfaceVariant : scheme.onSurface;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: Text(
-          module.toUpperCase(),
-          style: theme.textTheme.titleSmall?.copyWith(letterSpacing: 1.2),
+        title: Row(
+          children: [
+            if (allLocked) ...[
+              Icon(Icons.lock_outline, size: 15, color: headerColor),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Text(
+                module.toUpperCase(),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  letterSpacing: 1.2,
+                  color: headerColor,
+                ),
+              ),
+            ),
+            if (allLocked)
+              _tierBadge(theme, moduleTier ?? 'UPGRADE', emphasised: true),
+          ],
         ),
-        initiallyExpanded: true,
+        // A module nobody can use starts collapsed — it's reference, not
+        // something to scroll past on every edit.
+        initiallyExpanded: !allLocked,
         // The card already draws a border; without these the tile adds its
         // own top/bottom rules when expanded.
         shape: const Border(),
         collapsedShape: const Border(),
-        textColor: scheme.onSurface,
-        collapsedTextColor: scheme.onSurface,
+        textColor: headerColor,
+        collapsedTextColor: headerColor,
         iconColor: scheme.onSurfaceVariant,
         collapsedIconColor: scheme.onSurfaceVariant,
         children: perms.map((perm) {
+          final action = _actionOf(perm);
           final isSelected = _selectedPermissionIds.contains(perm['id']);
           final description = perm['description']?.toString();
+          final onPlan = plan.allows(action);
+          final requiredTier = plan.requiredTier(action);
+
+          final titleColor = onPlan ? null : scheme.onSurfaceVariant;
+
+          // An off-plan permission that's already on the role. Worth
+          // spelling out: it isn't doing anything right now, and saving
+          // won't drop it.
+          final strandedNote = !onPlan && isSelected
+              ? "Assigned, but inactive until you upgrade"
+              : null;
 
           return CheckboxListTile(
-            title: Text(
-              perm['action_name'].toString().replaceAll('_', ' ').toUpperCase(),
-              style: theme.textTheme.labelLarge,
-            ),
-            subtitle: description == null || description.isEmpty
+            enabled: onPlan,
+            secondary: onPlan
                 ? null
-                : Text(
-                    description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                : _tierBadge(theme, requiredTier ?? 'UPGRADE'),
+            title: Text(
+              action.replaceAll('_', ' ').toUpperCase(),
+              style: theme.textTheme.labelLarge?.copyWith(color: titleColor),
+            ),
+            subtitle:
+                (description == null || description.isEmpty) &&
+                    strandedNote == null
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (description != null && description.isNotEmpty)
+                        Text(
+                          description,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (strandedNote != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            strandedNote,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
             value: isSelected,
-            onChanged: (bool? val) {
-              setState(() {
-                if (val == true) {
-                  _selectedPermissionIds.add(perm['id']);
-                } else {
-                  _selectedPermissionIds.remove(perm['id']);
-                }
-              });
-            },
+            onChanged: !onPlan
+                ? null
+                : (bool? val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedPermissionIds.add(perm['id']);
+                      } else {
+                        _selectedPermissionIds.remove(perm['id']);
+                      }
+                    });
+                  },
           );
         }).toList(),
       ),

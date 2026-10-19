@@ -50,6 +50,40 @@ class UserProvider with ChangeNotifier {
   String _currencySymbol = 'R'; // Default to ZAR symbol
   String get currencySymbol => _currencySymbol;
 
+  String _planTier = 'Lite';
+  Set<String> _planFeatures = {};
+  Set<String>? _planActions;
+  String get planTier => _planTier;
+  Set<String> get planFeatures => _planFeatures;
+
+  Set<String>? get planActions => _planActions;
+  //
+  void setPlan(Map<String, dynamic>? state) {
+    if (state == null) return;
+    _planTier = state['tier']?.toString() ?? 'Lite';
+    _planFeatures = ((state['features'] as List?) ?? [])
+        .map((e) => e.toString())
+        .toSet();
+    final actions = state['actions'] as List?;
+    _planActions = actions == null
+        ? null
+        : actions.map((e) => e.toString()).toSet();
+    notifyListeners();
+  }
+
+  /// Is this permission action included in the tenant's plan?
+  /// Returns true when the plan is unknown, so a failed load never
+  /// hides UI.
+  bool planAllows(String action) =>
+      (_planActions == null || _planActions!.isEmpty)
+      ? true
+      : _planActions!.contains(action);
+
+  /// For features that have no permission behind them — Messenger,
+  /// Meeting Scheduler, the onboarding flows. Use can() for everything
+  /// that does have one.
+  bool hasFeature(String key) => _planFeatures.contains(key);
+
   void setUserProfile(Map<String, dynamic> userData) {
     debugPrint(
       'setUserProfile currency: '

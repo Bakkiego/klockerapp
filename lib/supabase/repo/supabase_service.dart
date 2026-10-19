@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../models/app_enums.dart';
+import '../../models/leader_seats.dart';
 import '../../services/key_service.dart';
 import '../../services/chat_crypto.dart';
 
@@ -4408,34 +4409,96 @@ class SupabaseService {
   // ==========================================
   // --- FETCH USER PERMISSIONS ON LOGIN ---
   // ==========================================
+
+  Future<Map<String, dynamic>?> getPlanState() async {
+    final result = await _supabase.rpc('my_plan_state');
+    if (result == null) return null;
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<LeaderSeats?> getLeaderSeats() async {
+    try {
+      final result = await _supabase.rpc('my_leader_seats');
+      if (result == null) return null;
+      final map = Map<String, dynamic>.from(result as Map);
+      return LeaderSeats(
+        tier: map['tier']?.toString() ?? 'Lite',
+        limit: map['limit'] as int?,
+        used: (map['used'] as num?)?.toInt() ?? 0,
+      );
+    } catch (e) {
+      debugPrint('Leader seat lookup failed: $e');
+      return null;
+    }
+  }
+
+  Future<Set<String>?> getPlanActions() async {
+    try {
+      final result = await _supabase.rpc('my_plan_actions');
+      if (result == null) return null;
+      return (result as List).map((e) => e.toString()).toSet();
+    } catch (e) {
+      debugPrint('Plan actions lookup failed: $e');
+      return null;
+    }
+  }
+
   Future<List<String>> getUserPermissions(
     String? customRoleId,
     String legacyRole,
   ) async {
+    final List<String> granted;
+
     // 1. If they have a Custom Role assigned, use its exact permissions!
-    // (This allows you to test custom roles even if your account is technically a 'Manager')
     if (customRoleId != null) {
       final data = await _supabase
           .from('role_permissions')
           .select('app_permissions!inner(action_name)')
           .eq('role_id', customRoleId);
 
-      return data
+      granted = data
           .map((e) => e['app_permissions']['action_name'] as String)
           .toList();
     }
-
-    // 2. Legacy Fallback: If no custom role is assigned yet, but they are a master 'Manager',
-    // download the entire master list of permissions so they aren't locked out of their own app.
-    if (legacyRole.toLowerCase() == 'manager') {
+    // 2. Legacy Fallback: a master 'Manager' with no custom role gets the
+    //    whole master list so they aren't locked out of their own app.
+    else if (legacyRole.toLowerCase() == 'manager') {
       final data = await _supabase
           .from('app_permissions')
           .select('action_name');
-      return data.map((e) => e['action_name'] as String).toList();
+
+      granted = data.map((e) => e['action_name'] as String).toList();
+    }
+    // 3. Baseline Employee with no custom role
+    else {
+      return [];
     }
 
-    // 3. Baseline Employee with no custom role
-    return [];
+    // 3. Intersect with the plan.
+    final planActions = await getPlanActions();
+
+    // Null means the lookup failed or the RPC isn't deployed. Fail OPEN —
+    // filtering against an empty set would strip every permission from
+    // every user at once.
+    if (planActions == null) {
+      debugPrint('Plan actions unknown — serving unfiltered permissions.');
+      return granted;
+    }
+
+    return granted.where(planActions.contains).toList();
+  }
+
+  Future<Map<String, String>> getPlanActionTiers() async {
+    try {
+      final result = await _supabase.rpc('plan_action_tiers');
+      if (result == null) return {};
+      return (result as Map).map(
+        (k, v) => MapEntry(k.toString(), v.toString()),
+      );
+    } catch (e) {
+      debugPrint('Plan action tiers lookup failed: $e');
+      return {};
+    }
   }
 
   // Delete a unified role

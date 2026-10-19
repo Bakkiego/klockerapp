@@ -135,6 +135,9 @@ class _AuthGateState extends State<AuthGate> {
       );
       if (!mounted) return;
       context.read<UserProvider>().setPermissions(permissions);
+      final planState = await SupabaseService().getPlanState();
+      if (!mounted) return;
+      context.read<UserProvider>().setPlan(planState);
 
       final tenantSettings = await SupabaseService().getTenantSettings();
       if (!mounted) return;

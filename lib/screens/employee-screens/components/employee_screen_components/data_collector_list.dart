@@ -23,6 +23,18 @@ class DataCollectorList {
   List<String> branchOptions = ["Loading..."];
   List<String> deptOptions = ["Loading..."];
 
+  /// Call from the owning State's dispose(). Seven controllers were being
+  /// created per screen and never released.
+  void dispose() {
+    nameController.dispose();
+    emailController.dispose();
+    phoneController.dispose();
+    addressController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+    dateController.dispose();
+  }
+
   late final List<ExpansionTile> personalTileBody = [
     ExpansionTile(
       title: const Text("Personal Details"),
@@ -54,7 +66,31 @@ class DataCollectorList {
     required VoidCallback onDateTap,
     required VoidCallback onRefresh,
     VoidCallback? onCreateJobTitle,
+
+    /// Enum role values (as toSql strings) to leave out of the User Role
+    /// dropdown — used for the admin/manager seat cap. Compared
+    /// case-insensitively. Pass `roleNotice` alongside it, or an admin
+    /// just finds two options missing with no explanation.
+    Set<String> blockedRoles = const {},
+
+    /// Rendered directly above the User Role dropdown. This is where the
+    /// seat-cap message belongs: next to the control it affects, not in a
+    /// different card further down the form.
+    Widget? roleNotice,
   }) {
+    final blocked = blockedRoles.map((r) => r.toLowerCase()).toSet();
+
+    final roleItems = userRole.values
+        .map((e) => e.toSql)
+        .where(
+          // The current value must always stay in the list. A
+          // DropdownButton whose `value` has no matching item throws,
+          // so filtering out the role someone already holds would crash
+          // the screen rather than restrict it.
+          (r) => r == selectedRole || !blocked.contains(r.toLowerCase()),
+        )
+        .toList();
+
     return [
       ExpansionTile(
         title: const Text("Company Details"),
@@ -82,10 +118,11 @@ class DataCollectorList {
             },
           ),
           const SizedBox(height: 16),
+          if (roleNotice != null) roleNotice,
           KDropDownField(
             hintText: "Select User Role",
             // Mapping your Enum values to a list of Strings for the UI
-            items: userRole.values.map((e) => e.toSql).toList(),
+            items: roleItems,
             value: selectedRole,
             onChanged: (selectedValue) {
               selectedRole = selectedValue;

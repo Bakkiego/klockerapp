@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:klockerapp/providers/user_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:klockerapp/screens/pending_approval_screen.dart';
+import 'package:klockerapp/screens/subscription_locked_screen.dart';
 
 import 'help-screens/change_password_screen.dart';
 
@@ -22,6 +23,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final emailCont = TextEditingController();
   final passCont = TextEditingController();
   bool _isLoading = false;
+
+  @override
+  void dispose() {
+    emailCont.dispose();
+    passCont.dispose();
+    super.dispose();
+  }
 
   void _showFriendlyError(String rawError, {bool isAuthError = false}) {
     String friendlyMessage = "Something went wrong. Please try again.";
@@ -49,16 +57,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (mounted) {
+      final scheme = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.error_outline_rounded, color: Colors.white),
+              Icon(Icons.error_outline_rounded, color: scheme.onError),
               const SizedBox(width: 10),
-              Expanded(child: Text(friendlyMessage)),
+              Expanded(
+                child: Text(
+                  friendlyMessage,
+                  style: TextStyle(color: scheme.onError),
+                ),
+              ),
             ],
           ),
-          backgroundColor: Colors.redAccent.shade700,
+          backgroundColor: scheme.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -89,66 +103,97 @@ class _LoginScreenState extends State<LoginScreen> {
       final String approvalStatus =
           userData['approval_status'] ?? 'approved'; // 🚀 Grab status
 
-      if (mounted) {
-        // 🚀 GATE 1: Are they pending? Send to Waiting Room.
-        if (approvalStatus == 'pending') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const PendingApprovalScreen(),
-            ),
-          );
-          return;
-        } else if (approvalStatus == 'rejected') {
-          await Supabase.instance.client.auth.signOut();
-          _showFriendlyError(
-            "Access Denied: Your account has been rejected by HR.",
-          );
-          return;
-        }
-        // ✅ If we get here, they are approved! Let them into the system.
-        context.read<UserProvider>().setUserProfile(userData);
-        context.read<UserProvider>().setChatReady(
-          userData['chat_ready'] ?? true,
-        );
-        final tenantCurrency = userData['currency'];
-        if (tenantCurrency != null) {
-          context.read<UserProvider>().setCurrencyFromCode(tenantCurrency);
-        }
-        final String legacyRole = userData['role'] ?? 'employee';
-        final String? customRoleId = userData['custom_role_id'];
+      if (!mounted) return;
 
-        final permissions = await SupabaseService().getUserPermissions(
-          customRoleId,
-          legacyRole,
+      // 🚀 GATE 1: Are they pending? Send to Waiting Room.
+      if (approvalStatus == 'pending') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const PendingApprovalScreen(),
+          ),
         );
-        context.read<UserProvider>().setPermissions(
-          permissions,
-          hasCustomRole: customRoleId != null,
+        return;
+      } else if (approvalStatus == 'rejected') {
+        await Supabase.instance.client.auth.signOut();
+        _showFriendlyError(
+          "Access Denied: Your account has been rejected by HR.",
         );
+        return;
+      }
 
-        if (userData['must_change_password'] == true) {
-          final changed = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const ChangePasswordScreen(isForced: true),
-            ),
-          );
+      // 🔒 GATE 2: Is the company's subscription still live?
+      //
+      // This has to happen BEFORE permissions load. Every tenant table
+      // carries a restrictive `subscription_active` policy, so a lapsed
+      // tenant that gets past here reaches a dashboard where every query
+      // returns zero rows — which reads as a broken app, not as an unpaid
+      // invoice. Nothing is deleted either way; the gate is read-only.
+      final bool tenantActive = await SupabaseService().isTenantActive();
+      if (!mounted) return;
 
-          // PopScope blocks the back gesture, so this only happens if
-          // something unusual dismissed the screen. Fail closed.
-          if (changed != true) {
-            await Supabase.instance.client.auth.signOut();
-            if (mounted) setState(() => _isLoading = false);
-            return;
-          }
-        }
+      if (!tenantActive) {
+        // Only fetched on the unhappy path — the lock screen needs the
+        // status, expiry date and tier to tell them what to renew.
+        final billingState = await SupabaseService().getBillingState();
+        if (!mounted) return;
 
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => BottomNav(role: role)),
+          MaterialPageRoute(
+            builder: (_) =>
+                SubscriptionLockedScreen(billingState: billingState),
+          ),
         );
+        return;
       }
+
+      // ✅ If we get here, they are approved and paid up. Let them in.
+      context.read<UserProvider>().setUserProfile(userData);
+      context.read<UserProvider>().setChatReady(userData['chat_ready'] ?? true);
+      final tenantCurrency = userData['currency'];
+      if (tenantCurrency != null) {
+        context.read<UserProvider>().setCurrencyFromCode(tenantCurrency);
+      }
+      final String legacyRole = userData['role'] ?? 'employee';
+      final String? customRoleId = userData['custom_role_id'];
+
+      final permissions = await SupabaseService().getUserPermissions(
+        customRoleId,
+        legacyRole,
+      );
+      if (!mounted) return;
+      context.read<UserProvider>().setPermissions(
+        permissions,
+        hasCustomRole: customRoleId != null,
+      );
+
+      final planState = await SupabaseService().getPlanState();
+      if (!mounted) return;
+      context.read<UserProvider>().setPlan(planState);
+
+      if (userData['must_change_password'] == true) {
+        final changed = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ChangePasswordScreen(isForced: true),
+          ),
+        );
+
+        // PopScope blocks the back gesture, so this only happens if
+        // something unusual dismissed the screen. Fail closed.
+        if (changed != true) {
+          await Supabase.instance.client.auth.signOut();
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+        if (!mounted) return;
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => BottomNav(role: role)),
+      );
     } on AuthException catch (e) {
       _showFriendlyError(e.message, isAuthError: true);
     } catch (e) {
@@ -159,12 +204,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _launchWebsite() async {
-    final Uri url = Uri.parse(
-      'https://yourwebsite.com',
-    ); // TODO: Replace with your actual URL
+    final Uri url = Uri.parse('https://klockerapp.com');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       _showFriendlyError(
-        "Could not open the browser. Please visit our website manually.",
+        "Could not open the browser. Please visit klockerapp.com manually.",
       );
     }
   }
@@ -172,10 +215,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
       body: SafeArea(
         // 🚀 WEB FIX: Center and Constrain the width!
         child: Center(
@@ -205,8 +247,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 8),
                   Text(
                     "Sign in to manage your workforce",
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 50),
@@ -215,13 +257,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: isDark ? theme.colorScheme.surface : Colors.white,
+                      color: theme.cardColor,
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark
-                              ? Colors.black54
-                              : Colors.black.withOpacity(0.05),
+                          color: scheme.shadow.withOpacity(0.08),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -232,6 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: emailCont,
                           keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: "Email",
                             prefixIcon: Icon(Icons.email_outlined),
@@ -241,6 +282,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: passCont,
                           obscureText: true,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) {
+                            if (!_isLoading) _handleSignIn();
+                          },
                           decoration: const InputDecoration(
                             labelText: "Password",
                             prefixIcon: Icon(Icons.lock_outline),
@@ -248,24 +293,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 32),
                         _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Color(0xFF00A36C),
-                              )
+                            ? const CircularProgressIndicator()
                             : ElevatedButton(
                                 onPressed: _handleSignIn,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF00A36C),
-                                  foregroundColor: Colors.white,
                                   minimumSize: const Size(double.infinity, 54),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                 ),
-                                child: const Text(
+                                child: Text(
                                   "Sign In",
-                                  style: TextStyle(
+                                  style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 16,
                                   ),
                                 ),
                               ),
@@ -277,16 +317,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   // --- OPTION A: THE "READER APP" FOOTER ---
                   Text(
                     "Don't have an account?",
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   TextButton(
                     onPressed: _launchWebsite,
-                    child: const Text(
+                    child: Text(
                       "Set up your workspace at klockerapp.com",
-                      style: TextStyle(
-                        color: Color(0xFF00A36C),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.primary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
