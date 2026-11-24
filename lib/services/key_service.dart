@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/cupertino.dart';
+
 import '../supabase/repo/supabase_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:cryptography/cryptography.dart';
@@ -62,7 +64,10 @@ class KeyService {
         .select()
         .eq('profile_id', userId)
         .maybeSingle();
-    if (row == null) return false;
+    if (row == null) {
+      debugPrint('KeyService: no backup row visible for $userId');
+      return false;
+    }
 
     final salt = base64Decode(row['kdf_salt']);
     final wrappingKey = await _kdf.deriveKeyFromPassword(
@@ -82,7 +87,8 @@ class KeyService {
         value: base64Encode(privateBytes),
       );
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('KeyService: unwrap failed — $e');
       return false;
     }
   }

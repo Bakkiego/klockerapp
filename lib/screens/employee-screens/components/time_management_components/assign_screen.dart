@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:klockerapp/supabase/repo/supabase_service.dart';
 import '../time_management_components/utils/multi_select_calendar.dart';
+import 'go/assign_go_locations_screen.dart';
+
+enum _LocationMode { branch, go }
 
 class AssignScreen extends StatefulWidget {
   const AssignScreen({super.key});
@@ -13,17 +16,18 @@ class _AssignScreenState extends State<AssignScreen> {
   final SupabaseService _service = SupabaseService();
   final TextEditingController _searchController = TextEditingController();
 
-  // Data from Supabase
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _filteredEmployees = [];
   List<Map<String, dynamic>> _branches = [];
   List<Map<String, dynamic>> _templates = [];
 
-  // Selections
   List<DateTime> _bulkAssignmentDates = [];
   List<String> _selectedEmployeeIds = [];
   String? _selectedBranchId;
   String? _selectedTemplateId;
+
+  _LocationMode _mode = _LocationMode.branch;
+  List<Map<String, dynamic>> _selectedGoLocations = [];
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -67,22 +71,49 @@ class _AssignScreenState extends State<AssignScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint("Load Error: $e");
+      debugPrint('Load Error: $e');
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _pickGoLocations() async {
+    final result = await Navigator.push<List<Map<String, dynamic>>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AssignGoLocationsScreen(
+          initiallySelected: _selectedGoLocations,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() => _selectedGoLocations = result);
     }
   }
 
   Future<void> _handleBulkSave() async {
     if (_selectedEmployeeIds.isEmpty ||
-        _selectedBranchId == null ||
         _selectedTemplateId == null ||
         _bulkAssignmentDates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            "Missing selection: Ensure dates, employees, shift, and branch are selected.",
+            'Missing selection: Ensure dates, employees, and shift template are selected.',
           ),
         ),
+      );
+      return;
+    }
+
+    if (_mode == _LocationMode.branch && _selectedBranchId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a branch location.')),
+      );
+      return;
+    }
+
+    if (_mode == _LocationMode.go && _selectedGoLocations.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one GO location.')),
       );
       return;
     }
@@ -90,17 +121,27 @@ class _AssignScreenState extends State<AssignScreen> {
     setState(() => _isSaving = true);
 
     try {
-      await _service.assignBulkShifts(
-        employeeIds: _selectedEmployeeIds,
-        branchId: _selectedBranchId!,
-        templateId: _selectedTemplateId!,
-        dates: _bulkAssignmentDates,
-      );
+      if (_mode == _LocationMode.branch) {
+        await _service.assignBulkShifts(
+          employeeIds: _selectedEmployeeIds,
+          branchId: _selectedBranchId!,
+          templateId: _selectedTemplateId!,
+          dates: _bulkAssignmentDates,
+        );
+      } else {
+        await _service.assignGoShifts(
+          employeeIds: _selectedEmployeeIds,
+          templateId: _selectedTemplateId!,
+          dates: _bulkAssignmentDates,
+          locationIds:
+              _selectedGoLocations.map((l) => l['id'].toString()).toList(),
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Assignment successful!"),
+            content: Text('Assignment successful!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -109,7 +150,7 @@ class _AssignScreenState extends State<AssignScreen> {
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -133,10 +174,9 @@ class _AssignScreenState extends State<AssignScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // SECTION 1: CALENDAR
                   _buildSectionHeader(
-                    "1. Select Dates",
-                    "${_bulkAssignmentDates.length} selected",
+                    '1. Select Dates',
+                    '${_bulkAssignmentDates.length} selected',
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -156,10 +196,9 @@ class _AssignScreenState extends State<AssignScreen> {
 
                   const Divider(height: 40, thickness: 1),
 
-                  // SECTION 2: EMPLOYEES
                   _buildSectionHeader(
-                    "2. Select Employees",
-                    "${_selectedEmployeeIds.length} selected",
+                    '2. Select Employees',
+                    '${_selectedEmployeeIds.length} selected',
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -168,7 +207,7 @@ class _AssignScreenState extends State<AssignScreen> {
                         TextField(
                           controller: _searchController,
                           decoration: InputDecoration(
-                            hintText: "Search employees...",
+                            hintText: 'Search employees...',
                             prefixIcon: const Icon(Icons.search),
                             filled: true,
                             fillColor: Colors.transparent,
@@ -229,17 +268,19 @@ class _AssignScreenState extends State<AssignScreen> {
 
                   const SizedBox(height: 25),
 
-                  // SECTION 3: SHIFT & BRANCH
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildDropdown(
-                          label: "Select Shift Template",
+                          label: 'Select Shift Template',
                           value: _selectedTemplateId,
                           items: _templates.map((t) {
                             final color = Color(
-                              int.parse(t['color_hex'].replaceAll('#', '0xFF')),
+                              int.parse(
+                                t['color_hex'].replaceAll('#', '0xFF'),
+                              ),
                             );
                             return DropdownMenuItem(
                               value: t['id'] as String,
@@ -258,28 +299,64 @@ class _AssignScreenState extends State<AssignScreen> {
                           onChanged: (val) =>
                               setState(() => _selectedTemplateId = val),
                         ),
-                        const SizedBox(height: 15),
-                        _buildDropdown(
-                          label: "Select Work Location (Branch)",
-                          value: _selectedBranchId,
-                          items: _branches
-                              .map(
-                                (b) => DropdownMenuItem(
-                                  value: b['id'] as String,
-                                  child: Text(b['name']),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (val) =>
-                              setState(() => _selectedBranchId = val),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Work location mode',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
+                        const SizedBox(height: 8),
+                        SegmentedButton<_LocationMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _LocationMode.branch,
+                              label: Text('Branch'),
+                              icon: Icon(Icons.store_mall_directory_outlined),
+                            ),
+                            ButtonSegment(
+                              value: _LocationMode.go,
+                              label: Text('Klocker GO'),
+                              icon: Icon(Icons.route_outlined),
+                            ),
+                          ],
+                          selected: {_mode},
+                          onSelectionChanged: (set) {
+                            setState(() {
+                              _mode = set.first;
+                              if (_mode == _LocationMode.branch) {
+                                _selectedGoLocations = [];
+                              } else {
+                                _selectedBranchId = null;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        if (_mode == _LocationMode.branch)
+                          _buildDropdown(
+                            label: 'Select Work Location (Branch)',
+                            value: _selectedBranchId,
+                            items: _branches
+                                .map(
+                                  (b) => DropdownMenuItem(
+                                    value: b['id'] as String,
+                                    child: Text(b['name']),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) =>
+                                setState(() => _selectedBranchId = val),
+                          )
+                        else
+                          _buildGoLocationField(),
                       ],
                     ),
                   ),
 
                   const SizedBox(height: 40),
 
-                  // SAVE BUTTON
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: SizedBox(
@@ -297,7 +374,7 @@ class _AssignScreenState extends State<AssignScreen> {
                                 color: Colors.white,
                               )
                             : const Text(
-                                "SAVE ASSIGNMENTS",
+                                'SAVE ASSIGNMENTS',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -310,6 +387,70 @@ class _AssignScreenState extends State<AssignScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildGoLocationField() {
+    final label = _selectedGoLocations.isEmpty
+        ? 'Enter Location to search'
+        : _selectedGoLocations.map((l) => l['name']).join(', ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Select Work Location (Klocker GO)',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _pickGoLocations,
+          borderRadius: BorderRadius.circular(10),
+          child: InputDecorator(
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.transparent,
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: _selectedGoLocations.isEmpty
+                    ? Colors.grey
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        if (_selectedGoLocations.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _selectedGoLocations
+                .map(
+                  (l) => Chip(
+                    label: Text(l['name']?.toString() ?? ''),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedGoLocations.removeWhere(
+                          (x) => x['id'] == l['id'],
+                        );
+                      });
+                    },
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
     );
   }
 
@@ -347,7 +488,6 @@ class _AssignScreenState extends State<AssignScreen> {
         Text(
           label,
           style: const TextStyle(
-            color: Colors.white,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),

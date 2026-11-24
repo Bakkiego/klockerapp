@@ -1733,6 +1733,104 @@ class SupabaseService {
     }
   }
 
+  // ==========================================
+  // KLOCKER GO: LOCATIONS & ASSIGNMENTS
+  // ==========================================
+
+  /// Lists GO locations for the manager's tenant.
+  /// Prefer a direct table read (same pattern as branches) so search works
+  /// even if the RPC was not applied or `current_tenant_id()` fails.
+  Future<List<Map<String, dynamic>>> searchGoLocations(String query) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final tenantId = profile['tenant_id'];
+    final q = query.trim();
+
+    var request = _supabase
+        .from('go_locations')
+        .select('*')
+        .eq('tenant_id', tenantId);
+
+    if (q.isNotEmpty) {
+      // PostgREST or-filter: name OR address contains query
+      request = request.or('name.ilike.%$q%,address.ilike.%$q%');
+    }
+
+    final response = await request.order('name', ascending: true).limit(50);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<Map<String, dynamic>> createGoLocation({
+    required String name,
+    String? address,
+    double? lat,
+    double? lng,
+    int radiusMeters = 100,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('Not logged in');
+
+    final profile = await _supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+    final row = await _supabase
+        .from('go_locations')
+        .insert({
+          'tenant_id': profile['tenant_id'],
+          'name': name,
+          'address': address,
+          'gps_lat': lat,
+          'gps_long': lng,
+          'radius_meters': radiusMeters,
+        })
+        .select()
+        .single();
+
+    return Map<String, dynamic>.from(row);
+  }
+
+  Future<void> assignGoShifts({
+    required List<String> employeeIds,
+    required String templateId,
+    required List<DateTime> dates,
+    required List<String> locationIds,
+  }) async {
+    final dateStrs = dates
+        .map(
+          (d) =>
+              '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}',
+        )
+        .toList();
+
+    await _supabase.rpc(
+      'assign_go_shifts',
+      params: {
+        'p_employee_ids': employeeIds,
+        'p_template_id': templateId,
+        'p_dates': dateStrs,
+        'p_location_ids': locationIds,
+      },
+    );
+
+    for (final employeeId in employeeIds) {
+      await sendNotification(
+        recipientId: employeeId,
+        title: 'New GO Shifts Scheduled',
+        message: 'You have been assigned multi-location shifts. Open Klocker GO.',
+      );
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getRosterForDate(DateTime date) async {
     final currentUser = _supabase.auth.currentUser;
 
